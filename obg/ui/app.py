@@ -3,13 +3,14 @@ import time
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll, Horizontal
 from textual.screen import Screen
-from textual.widgets import Static, Button, Input
+from textual.widgets import Static, Button, Input, ProgressBar
 from textual import work
 from obg import __version__
 from obg.utils import logger
 from obg.core.detector import list_disks
 from obg.core.engine import run_pipeline
 from obg.core.health import read_smart, run_short_test
+from obg.core.session import find_session, complete_session
 from obg.config import load_config, save_config
 from obg.models.disk import DiskInfo
 from obg.models.operation import StepStatus, OperationResult
@@ -24,10 +25,10 @@ class ObgApp(App):
     Screen { background: #0a0a0a; color: #cccccc; }
     .header { dock: top; padding: 0 1; background: #111111; color: #cccccc; border-bottom: solid #333333; }
     .footer { dock: bottom; padding: 0 1; background: #111111; color: #666666; border-top: solid #333333; }
-    .card { border: solid #333333; margin: 0 1; padding: 0 1; }
-    .card-selected { border: solid #1a1a2e; margin: 0 1; padding: 0 1; background: #1a1a2e; }
+    .card { border: solid #333333; margin: 0 1 1 1; padding: 0 1; }
+    .card-selected { border: solid #1a1a2e; margin: 0 1 1 1; padding: 0 1; background: #1a1a2e; }
     .card:hover { background: #1a1a2e; }
-    .card-disabled { border: solid #333333; margin: 0 1; padding: 0 1; color: #555555; }
+    .card-disabled { border: solid #333333; margin: 0 1 1 1; padding: 0 1; color: #555555; }
     .group-title { color: #cccccc; text-style: bold; margin-top: 1; }
     .config-group { margin: 0 0 0 2; }
     .config-label { color: #666666; margin-top: 1; }
@@ -50,6 +51,8 @@ class ObgApp(App):
     .panel-box { border: solid #333333; margin: 0 1; padding: 0 1; }
     .dialog-overlay { background: rgba(0,0,0,0.7); align: center middle; }
     .dialog-box { width: 50; min-width: 40; border: solid #333333; background: #111111; padding: 1; }
+    .progress-info { color: #aaaaaa; }
+    ProgressBar { margin: 0 2; }
     """
 
     def on_mount(self) -> None:
@@ -130,6 +133,12 @@ class DriveSelectionScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static(f"OldButGold v{__version__}  |  Select Drive", classes="header")
         yield VerticalScroll(id="disk-list")
+        yield Horizontal(
+            Button(" Refresh ", id="refresh-btn"),
+            Button(" Back ", id="back-btn"),
+            Button(" Quit ", id="quit-btn"),
+            classes="btn-row",
+        )
         yield Static("  Up/Down Select   Enter Confirm   R Refresh   Esc Back   Q Quit", classes="footer")
 
     def on_mount(self) -> None:
@@ -164,6 +173,11 @@ class DriveSelectionScreen(Screen):
                     f"{sel_arrow} {disk.model}",
                     f"   {disk.device}  {disk.transport}  {disk.capacity_human}",
                 ]
+                session = find_session(disk)
+                if session:
+                    total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
+                    pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
+                    lines.append(f"   Interrupted Validation  —  {pct}% Completed")
                 widget = Static("\n".join(lines), classes=css)
             else:
                 reason = "SSD / Unsupported" if not disk.is_supported else ""
@@ -187,6 +201,14 @@ class DriveSelectionScreen(Screen):
         elif event.key == "escape":
             self.app.pop_screen()
 
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "refresh-btn":
+            self._refresh()
+        elif event.button.id == "back-btn":
+            self.app.pop_screen()
+        elif event.button.id == "quit-btn":
+            self.app.exit()
+
     def on_click(self, event) -> None:
         idx = getattr(event.widget, 'idx', None)
         if idx is not None and 0 <= idx < len(self._disks):
@@ -200,14 +222,109 @@ class DriveSelectionScreen(Screen):
         disk = self._disks[self._selected]
         if not disk.is_supported:
             return
-        self.app.push_screen(DriveInfoScreen(disk))
+        session = find_session(disk)
+        if session:
+            self.app.push_screen(SessionDecisionScreen(disk, session))
+        else:
+            self.app.push_screen(SmartTestScreen(disk))
 
 
-class DriveInfoScreen(Screen):
+class SessionDecisionScreen(Screen):
+    def __init__(self, disk: DiskInfo, session: dict) -> None:
+        super().__init__()
+        self.disk = disk
+        self.session = session
+
+    def compose(self) -> ComposeResult:
+        total_blocks = self.disk.capacity_bytes // 4096 if self.disk.capacity_bytes else 1
+        pct = min(99, int(self.session.get("badblocks_offset", 0) / total_blocks * 100))
+        yield Static(f"OldButGold v{__version__}  |  Session Recovery", classes="header")
+        with VerticalScroll():
+            yield Static("  Interrupted Validation Session", classes="group-title")
+            yield Static("")
+            yield Static(f"  Model:         {self.disk.model}")
+            yield Static(f"  Serial:        {self.disk.serial}")
+            yield Static(f"  Capacity:      {self.disk.capacity_human}")
+            yield Static(f"  Current Stage: {self.session.get('current_stage', 'Badblocks Validation')}")
+            yield Static(f"  Completed:     {pct}%")
+            yield Static(f"  Started:       {self.session.get('created_at', 'Unknown')}")
+            yield Static("")
+            yield Static("  This drive has an interrupted validation session.", classes="config-group")
+            yield Static("  What would you like to do?", classes="config-group")
+            yield Static("", classes="config-group")
+            yield Horizontal(
+                Button(" Recover ", id="recover-btn"),
+                Button(" Restart ", id="restart-btn"),
+                Button(" Back ", id="back-btn"),
+                classes="btn-row",
+            )
+        yield Static("  Enter Select   Esc Back", classes="footer")
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.app.pop_screen()
+        elif event.key == "enter":
+            self.app.push_screen(SmartTestScreen(self.disk))
+
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "recover-btn":
+            # ponytail: recovery not implemented — same as restart
+            complete_session(self.disk)
+            self.app.push_screen(SmartTestScreen(self.disk))
+        elif event.button.id == "restart-btn":
+            complete_session(self.disk)
+            self.app.push_screen(SmartTestScreen(self.disk))
+        elif event.button.id == "back-btn":
+            self.app.pop_screen()
+
+
+class SmartTestScreen(Screen):
     def __init__(self, disk: DiskInfo) -> None:
         super().__init__()
         self.disk = disk
-        self._smart_data = None
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"OldButGold v{__version__}  |  SMART Short Self-Test", classes="header")
+        with VerticalScroll():
+            yield Static("  Running SMART Short Self-Test...", classes="group-title")
+            yield Static("", classes="config-group")
+            yield Static(f"  Device: {self.disk.device}", classes="config-group")
+            yield Static(f"  Model:  {self.disk.model}", classes="config-group")
+            yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
+            yield Static("", classes="config-group")
+            yield Static("  This may take up to 2 minutes.", id="test-status", classes="config-group")
+        yield Static("  Please wait...", classes="footer")
+
+    def on_mount(self) -> None:
+        self._run_test()
+
+    @work(thread=True)
+    def _run_test(self) -> None:
+        try:
+            self.app.call_from_thread(self._set_status, "  Running short test...")
+            run_short_test(self.disk.device)
+            self.app.call_from_thread(self._set_status, "  Collecting SMART data...")
+            sd = read_smart(self.disk.device)
+            self.app.call_from_thread(self._done, sd)
+        except Exception as e:
+            self.app.call_from_thread(self._set_status, f"  SMART Short failed: {e}")
+            self.app.call_from_thread(self._done, None)
+
+    def _set_status(self, msg: str) -> None:
+        try:
+            self.query_one("#test-status").update(msg)
+        except Exception:
+            pass
+
+    def _done(self, smart_data) -> None:
+        self.app.push_screen(DriveInfoScreen(self.disk, smart_data))
+
+
+class DriveInfoScreen(Screen):
+    def __init__(self, disk: DiskInfo, smart_data=None) -> None:
+        super().__init__()
+        self.disk = disk
+        self._smart_data = smart_data
 
     def compose(self) -> ComposeResult:
         yield Static(f"OldButGold v{__version__}  |  {self.disk.model}", classes="header")
@@ -234,16 +351,30 @@ class DriveInfoScreen(Screen):
                     yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
                     yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
                     yield Static(f"  RPM: {self.disk.rpm or 'N/A'}")
+        yield Horizontal(
+            Button(" Continue ", id="continue-btn"),
+            Button(" Back ", id="back-btn"),
+            classes="btn-row",
+        )
         yield Static("  Esc Back   Enter Continue", classes="footer")
 
     def on_mount(self) -> None:
-        self._fetch_smart()
+        if self._smart_data is not None:
+            self._update_smart(self._smart_data)
+        else:
+            self._fetch_smart()
 
     def on_key(self, event) -> None:
         if event.key == "escape":
             self.app.pop_screen()
         elif event.key == "enter":
             self.app.push_screen(ValidationConfigScreen(self.disk))
+
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "continue-btn":
+            self.app.push_screen(ValidationConfigScreen(self.disk))
+        elif event.button.id == "back-btn":
+            self.app.pop_screen()
 
     @work(thread=True)
     def _fetch_smart(self) -> None:
@@ -433,6 +564,12 @@ class ExecutionScreen(Screen):
         self._start_time = time.monotonic()
         self._cancelled = False
         self._done = False
+        self._bb_progress = 0.0
+        self._bb_progress_start = 0.0
+        self._bb_eta = ""
+        self._bb_operation = ""
+        self._last_pct_time = 0.0
+        self._last_pct = 0.0
 
     PIPELINE_STAGES = [
         "Drive Identification",
@@ -449,6 +586,14 @@ class ExecutionScreen(Screen):
         "Session Cleanup",
     ]
 
+    def _format_eta(self, seconds: float) -> str:
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        if h:
+            return f"{h}h {m:02d}m"
+        return f"{m}m {s:02d}s"
+
     def compose(self) -> ComposeResult:
         mode = "  [TEST MODE]" if self.app.test_mode else ""
         yield Static(f"OldButGold v{__version__}  |  Validating {self.disk.device}{mode}", classes="header")
@@ -460,6 +605,9 @@ class ExecutionScreen(Screen):
                     self._step_widgets[s] = w
                     yield w
             with VerticalScroll(classes="output-col"):
+                yield Static("  Progress", classes="group-title")
+                yield ProgressBar(total=100, id="bb-progress", show_eta=False)
+                yield Static("", id="progress-info", classes="progress-info")
                 yield Static("  Output", classes="group-title")
                 yield Static("", id="live-output")
         yield Static("  [C] Cancel  Elapsed: 00:00:00", classes="footer")
@@ -477,8 +625,13 @@ class ExecutionScreen(Screen):
             return
         e = int(time.monotonic() - self._start_time)
         h, m, s = e // 3600, (e % 3600) // 60, e % 60
+        parts = [f"  [C] Cancel  Elapsed: {h:02d}:{m:02d}:{s:02d}"]
+        if self._bb_operation and self._bb_progress > 0:
+            parts.append(f"  {self._bb_operation}  {self._bb_progress:.0f}%")
+        if self._bb_eta:
+            parts.append(f"  ETA: {self._bb_eta}")
         try:
-            self.query_one(".footer").update(f"  [C] Cancel  Elapsed: {h:02d}:{m:02d}:{s:02d}")
+            self.query_one(".footer").update(" |".join(parts))
         except Exception:
             pass
 
@@ -505,11 +658,43 @@ class ExecutionScreen(Screen):
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
+        import re
         self._output_lines.append(line)
         if len(self._output_lines) > 200:
             self._output_lines = self._output_lines[-200:]
         try:
             self.query_one("#live-output").update("\n".join(self._output_lines[-20:]))
+        except Exception:
+            pass
+        m = re.search(r'Testing with pattern (\S+):\s+([\d.]+)% done,\s+([\d:]+) elapsed', line)
+        if m:
+            self._bb_operation = f"Writing {m.group(1)}"
+            now = time.monotonic()
+            pct = float(m.group(2))
+            self._bb_progress = pct
+            self._bb_elapsed_str = m.group(3)
+            if pct > self._last_pct:
+                elapsed_since = now - self._last_pct_time
+                pct_delta = pct - self._last_pct
+                if elapsed_since > 0 and pct_delta > 0:
+                    rate = pct_delta / elapsed_since  # percent per second
+                    remaining_pct = 100 - pct
+                    eta_s = remaining_pct / rate if rate > 0 else 0
+                    self._bb_eta = self._format_eta(eta_s)
+                self._last_pct = pct
+                self._last_pct_time = now
+            self._update_progress()
+
+    def _update_progress(self) -> None:
+        try:
+            self.query_one("#bb-progress", ProgressBar).update(progress=self._bb_progress)
+        except Exception:
+            pass
+        info = f"  {self._bb_operation}  |  {self._bb_progress:.1f}%"
+        if self._bb_eta:
+            info += f"  |  ETA: {self._bb_eta}"
+        try:
+            self.query_one("#progress-info").update(info)
         except Exception:
             pass
 
@@ -562,6 +747,8 @@ class CompleteScreen(Screen):
                 yield Static("")
                 sb = r.snapshot.smart_before
                 sa = r.snapshot.smart_after
+                yield Static(f"  Filesystem:    {self.config['filesystem']}")
+                yield Static(f"  Label:         {self.config['label'] or '(none)'}")
                 yield Static(f"  SMART Before:  {sb.overall_health if sb else 'N/A'}")
                 yield Static(f"  SMART After:   {sa.overall_health if sa else 'N/A'}")
                 yield Static(f"  Bad Blocks:    {r.snapshot.badblocks_count}")
@@ -585,6 +772,7 @@ class CompleteScreen(Screen):
                 yield Static("  Pipeline failed or was cancelled.", classes="failed")
             yield Static("", classes="config-group")
             yield Horizontal(
+                Button(" Export Report ", id="export-btn"),
                 Button(" Validate Another Drive ", id="another-btn"),
                 Button(" Quit ", id="quit-btn"),
                 classes="btn-row",
@@ -598,10 +786,25 @@ class CompleteScreen(Screen):
             self.app.exit()
 
     def on_button_pressed(self, event) -> None:
-        if event.button.id == "another-btn":
+        if event.button.id == "export-btn":
+            self._export_report()
+        elif event.button.id == "another-btn":
             self._go_another()
         elif event.button.id == "quit-btn":
             self.app.exit()
+
+    def _export_report(self) -> None:
+        if self.result and self.result.report_path:
+            self._report_exported = True
+            try:
+                self.query_one(".footer").update(f"  Report saved: {self.result.report_path}  Q Quit")
+            except Exception:
+                pass
+        else:
+            try:
+                self.query_one(".footer").update("  No report to export.  Q Quit")
+            except Exception:
+                pass
 
     def _go_another(self) -> None:
         while len(self.app.screen_stack) > 1:
