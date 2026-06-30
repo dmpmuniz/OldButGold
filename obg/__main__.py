@@ -28,8 +28,17 @@ def main() -> None:
 
     # Privilege escalation via pkexec
     if os.geteuid() != 0:
-        logger.info("MAIN", "Not root, re-executing via pkexec")
         binary = os.path.abspath(sys.argv[0])
+        if not sys.stdout.isatty():
+            import shutil
+            for term_cmd in ("xterm", "x-terminal-emulator"):
+                term = shutil.which(term_cmd)
+                if term:
+                    logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
+                    os.execvp(term, [term, "-e", "pkexec", binary] + sys.argv[1:])
+            logger.error("MAIN", "No terminal emulator found. Run from a terminal: pkexec ./OldButGold")
+            sys.exit(1)
+        logger.info("MAIN", "Not root, re-executing via pkexec")
         os.execvp("pkexec", ["pkexec", binary] + sys.argv[1:])
 
     logger.info("MAIN", "Running with elevated privileges")
