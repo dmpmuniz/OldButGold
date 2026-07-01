@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import subprocess
+import sys
 import time
 from textual.app import App, ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal
@@ -25,7 +26,7 @@ class ObgApp(App):
 
     CSS = """
     Screen { background: #000000; align: center middle; }
-    #app-frame { width: 130; height: 40; border: solid #444444; background: #0a0a0a; layout: vertical; }
+    #app-frame { width: 100; height: 30; border: solid #444444; background: #0a0a0a; layout: vertical; }
     #header { height: 1; background: #111111; color: #cccccc; border-bottom: solid #333333; padding: 0 1; }
     #body { height: 1fr; overflow-y: auto; }
     #footer { height: 1; background: #111111; color: #666666; border-top: solid #333333; padding: 0 1; }
@@ -65,9 +66,7 @@ class ObgApp(App):
     """
 
     def on_mount(self) -> None:
-        import sys
-        import os
-        sys.stdout.write("\x1b[8;40;130t")
+        sys.stdout.write("\x1b[8;30;100t")
         sys.stdout.flush()
         self.push_screen(StartupScreen())
 
@@ -80,7 +79,7 @@ class StartupScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  HDD Revival Toolkit", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 yield Static("", classes="config-group")
                 yield Static("  OLD BUT GOLD", classes="group-title")
                 yield Static("  HDD Validation & Refurbishment Toolkit", classes="config-group")
@@ -175,7 +174,7 @@ class DriveSelectionScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Select Drive", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 yield VerticalScroll(id="disk-content")
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
@@ -272,7 +271,7 @@ class SessionDecisionScreen(Screen):
         pct = min(99, int(self.session.get("badblocks_offset", 0) / total_blocks * 100))
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Session Recovery", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 yield Static("  Interrupted Validation Session", classes="group-title")
                 yield Static("")
                 yield Static(f"  Model:         {self.disk.model}")
@@ -322,7 +321,7 @@ class SmartTestScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  SMART Short Self-Test", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 yield Static("  Running SMART Short Self-Test...", classes="group-title")
                 yield Static("", classes="config-group")
                 yield Static(f"  Device: {self.disk.device}", classes="config-group")
@@ -366,7 +365,7 @@ class DriveInfoScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  {self.disk.model}", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="panel-box"):
                         yield Static("  Device Information", classes="group-title")
@@ -455,7 +454,7 @@ class ValidationConfigScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Configuration", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 yield Static("  Validation Profile", classes="group-title")
                 for p in self.PROFILES:
                     marker = "(*)" if p.lower() == self.PROFILES[self._profile_idx].lower() else "( )"
@@ -557,7 +556,7 @@ class FinalConfirmationScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Confirm", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 yield Static("  Validation Summary", classes="group-title")
                 yield Static(f"  Drive:  {self.disk.model}")
                 yield Static(f"  Serial: {self.disk.serial}")
@@ -639,7 +638,7 @@ class ExecutionScreen(Screen):
         mode = "  [TEST MODE]" if self.app.test_mode else ""
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Validating {self.disk.device}{mode}", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="steps-col"):
                         yield Static("  Pipeline", classes="group-title")
@@ -796,7 +795,7 @@ class CompleteScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Validation Complete", id="header")
-            with VerticalScroll(id="body"):
+            with Container(id="body"):
                 if self.result:
                     r = self.result
                     cls_val = r.classification.classification.value
