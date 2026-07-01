@@ -51,6 +51,15 @@ def _detect_transport(device_name: str, tran_field: str | None) -> str:
     return "unknown"
 
 
+def _check_smart(device: str) -> bool:
+    result = run(["smartctl", "-i", device])
+    if result.returncode == 0:
+        for line in result.stdout.splitlines():
+            if "SMART support is: Available" in line:
+                return True
+    return False
+
+
 def _parse_capacity_human(size_bytes: int) -> str:
     if size_bytes >= 1_000_000_000_000:
         return f"{size_bytes / 1_000_000_000_000:.1f} TB"
@@ -116,7 +125,7 @@ def list_disks() -> list[DiskInfo]:
             optimal_io=dev.get("opt-io", 0),
             alignment_offset=dev.get("alignment", 0),
             rpm=None,
-            smart_supported=False,
+            smart_supported=_check_smart(f"/dev/{name}"),
             uas_enabled=(transport == "usb-uas"),
             current_fs=dev.get("fstype"),
             partition_table=None,

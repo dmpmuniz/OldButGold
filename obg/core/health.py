@@ -92,20 +92,22 @@ def poll_smart_test(
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         result = run(["smartctl", "-a", device])
-        if result.returncode in (0, 2):
-            output = result.stdout
-            if "Completed without error" in output:
-                return True
-            if "Self-test execution status:" in output:
-                status_match = re.search(r"Self-test execution status:\s*\(\s*(\d+)\s*\)", output)
-                if status_match:
-                    code = int(status_match.group(1))
-                    if code == 0:
-                        return True
-                    if code >= 249:
-                        continue
-            pct_match = re.search(r"(\d+)% of test remaining", output)
-            if pct_match and on_output:
-                on_output(f"{pct_match.group(1)}% remaining")
+        if result.returncode not in (0, 2):
+            return False
+        output = result.stdout
+        if "Completed without error" in output:
+            return True
+        if "Self-test execution status:" in output:
+            status_match = re.search(r"Self-test execution status:\s*\(\s*(\d+)\s*\)", output)
+            if status_match:
+                code = int(status_match.group(1))
+                if code == 0:
+                    return True
+                if code >= 249:
+                    time.sleep(60)
+                    continue
+        pct_match = re.search(r"(\d+)% of test remaining", output)
+        if pct_match and on_output:
+            on_output(f"{pct_match.group(1)}% remaining")
         time.sleep(60)
     return False

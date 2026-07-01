@@ -1,4 +1,6 @@
 from __future__ import annotations
+import os
+import subprocess
 import time
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll, Horizontal
@@ -53,6 +55,10 @@ class ObgApp(App):
     .dialog-box { width: 50; min-width: 40; border: solid #333333; background: #111111; padding: 1; }
     .progress-info { color: #aaaaaa; }
     ProgressBar { margin: 0 2; }
+    .startup-btn { width: 1fr; margin: 0 1; }
+    .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
+    .status-bar { dock: top; padding: 0 1; background: #111111; color: #aaaaaa; border-bottom: solid #333333; height: 3; }
+    .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
     """
 
     def on_mount(self) -> None:
@@ -60,6 +66,10 @@ class ObgApp(App):
 
 
 class StartupScreen(Screen):
+    def __init__(self):
+        super().__init__()
+        self._selected = 0
+
     def compose(self) -> ComposeResult:
         yield Static(f"OldButGold v{__version__}  |  HDD Revival Toolkit", classes="header")
         with VerticalScroll():
@@ -80,11 +90,11 @@ class StartupScreen(Screen):
             yield Static("", classes="config-group")
             yield Static("  Initializing...", id="init-status", classes="config-group")
         yield Horizontal(
-            Button(" Continue ", id="continue-btn", variant="default", disabled=True),
-            Button(" Exit ", id="exit-btn", variant="error"),
+            Button(" Continue ", id="continue-btn", classes="startup-btn selected", disabled=True),
+            Button(" Exit ", id="exit-btn", classes="startup-btn"),
             classes="btn-row",
         )
-        yield Static("  Initializing...  Esc Exit", classes="footer")
+        yield Static("  Initializing...  ← → Navigate  Enter Select  Esc Exit", classes="footer")
 
     def on_mount(self) -> None:
         self._init()
@@ -92,6 +102,30 @@ class StartupScreen(Screen):
     def on_key(self, event) -> None:
         if event.key == "escape":
             self.app.exit()
+        elif event.key == "right":
+            self._selected = 1
+            self._update_buttons()
+        elif event.key == "left":
+            self._selected = 0
+            self._update_buttons()
+        elif event.key == "enter":
+            if self._selected == 0:
+                btn = self.query_one("#continue-btn")
+                if not btn.disabled:
+                    self.app.push_screen(DriveSelectionScreen())
+            else:
+                self.app.exit()
+
+    def _update_buttons(self) -> None:
+        try:
+            self.query_one("#continue-btn").remove_class("selected")
+            self.query_one("#exit-btn").remove_class("selected")
+            if self._selected == 0:
+                self.query_one("#continue-btn").add_class("selected")
+            else:
+                self.query_one("#exit-btn").add_class("selected")
+        except Exception:
+            pass
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "continue-btn":
@@ -111,7 +145,7 @@ class StartupScreen(Screen):
         try:
             self.query_one("#init-status").update(f"  Detected {len(disks)} drive(s). Ready.")
             self.query_one("#continue-btn").disabled = False
-            self.query_one(".footer").update("  Enter Continue   Esc Exit")
+            self.query_one(".footer").update("  ← → Navigate  Enter Select  Esc Exit")
         except Exception:
             pass
 
@@ -129,14 +163,19 @@ class DriveSelectionScreen(Screen):
         super().__init__()
         self._disks: list[DiskInfo] = []
         self._selected = 0
+        self._current_disk: DiskInfo | None = None
+        self._smart_data = None
+        self._smart_loading = False
 
     def compose(self) -> ComposeResult:
         yield Static(f"OldButGold v{__version__}  |  Select Drive", classes="header")
-        yield VerticalScroll(id="disk-list")
+        yield Static("  Select a drive to begin", id="status-line", classes="status-bar")
+        with VerticalScroll(id="content-area"):
+            yield Static("", id="content")
         yield Horizontal(
-            Button(" Refresh ", id="refresh-btn"),
             Button(" Back ", id="back-btn"),
-            Button(" Quit ", id="quit-btn"),
+            Button(" Refresh ", id="refresh-btn"),
+            Button(" Continue ", id="next-btn", variant="default"),
             classes="btn-row",
         )
         yield Static("  Up/Down Select   Enter Confirm   R Refresh   Esc Back   Q Quit", classes="footer")
@@ -145,10 +184,17 @@ class DriveSelectionScreen(Screen):
         self._refresh()
 
     def action_refresh(self) -> None:
-        self._refresh()
+        if not self._smart_loading:
+            self._reset()
+            self._refresh()
 
     def action_quit(self) -> None:
         self.app.exit()
+
+    def _reset(self) -> None:
+        self._current_disk = None
+        self._smart_data = None
+        self._smart_loading = False
 
     def _refresh(self) -> None:
         try:
@@ -156,13 +202,34 @@ class DriveSelectionScreen(Screen):
         except Exception:
             self._disks = []
         self._selected = 0
+        self._show_list()
+
+    def _show_list(self) -> None:
+        self._reset()
+        self.query_one("#status-line").update("  Select a drive to begin")
+        self.query_one("#next-btn").disabled = True
+        self.query_one(".footer").update("  Up/Down Select   Enter Confirm   R Refresh   Esc Back   Q Quit")
         self._rebuild()
 
+    def _show_loading(self, msg: str) -> None:
+        self._rebuild()
+        self.query_one("#status-line").update(f"  {msg}")
+        self.query_one("#next-btn").disabled = True
+
     def _rebuild(self) -> None:
-        container = self.query_one("#disk-list")
+        container = self.query_one("#content")
         container.remove_children()
+        if self._current_disk:
+            if self._smart_loading:
+                self._build_loading()
+            else:
+                self._build_info()
+        else:
+            self._build_list()
+
+    def _build_list(self) -> None:
         if not self._disks:
-            container.mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
+            self.query_one("#content").mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
             return
         for i, disk in enumerate(self._disks):
             if disk.is_supported:
@@ -180,53 +247,127 @@ class DriveSelectionScreen(Screen):
                     lines.append(f"   Interrupted Validation  —  {pct}% Completed")
                 widget = Static("\n".join(lines), classes=css)
             else:
-                reason = "SSD / Unsupported" if not disk.is_supported else ""
                 lines = [
                     f"   {disk.model}",
-                    f"   {disk.device}  {disk.capacity_human}  [Protected]  {reason}",
+                    f"   {disk.device}  {disk.capacity_human}  [Protected]",
                 ]
                 widget = Static("\n".join(lines), classes="card-disabled")
             widget.idx = i
-            container.mount(widget)
+            self.query_one("#content").mount(widget)
+
+    def _build_loading(self) -> None:
+        d = self._current_disk
+        lines = [
+            f"  {d.model}",
+            f"  Serial: {d.serial}  |  Capacity: {d.capacity_human}",
+            "  Reading SMART data...",
+        ]
+        self.query_one("#content").mount(Static("\n".join(lines), classes="card"))
+
+    def _build_info(self) -> None:
+        d = self._current_disk
+        sd = self._smart_data
+        lines = [
+            f"  {d.model}",
+            f"  Serial: {d.serial}  |  Capacity: {d.capacity_human}",
+            f"  Transport: {d.transport}  |  Sector: {d.logical_sector}B/{d.physical_sector}B",
+        ]
+        if sd:
+            lines.append(f"  SMART: {sd.overall_health}  |  Temp: {sd.temperature or 'N/A'}C  |  POH: {sd.power_on_hours or 'N/A'}h")
+            lines.append(f"  Realloc: {sd.reallocated_sectors}  |  Pending: {sd.pending_sectors}  |  Uncorr: {sd.uncorrectable_sectors}")
+        else:
+            lines.append("  SMART not available")
+        self.query_one("#content").mount(Static("\n".join(lines), classes="card"))
 
     def on_key(self, event) -> None:
         if event.key == "up":
-            self._selected = max(0, self._selected - 1)
-            self._rebuild()
+            if self._current_disk is None:
+                self._selected = max(0, self._selected - 1)
+                self._rebuild()
         elif event.key == "down":
-            self._selected = min(len(self._disks) - 1, self._selected + 1)
-            self._rebuild()
+            if self._current_disk is None:
+                self._selected = min(len(self._disks) - 1, self._selected + 1)
+                self._rebuild()
         elif event.key == "enter":
-            self._select()
+            if self._current_disk is None:
+                self._select_disk()
+            else:
+                self.app.push_screen(ValidationConfigScreen(self._current_disk))
         elif event.key == "escape":
-            self.app.pop_screen()
+            if self._current_disk is not None:
+                self._show_list()
+            else:
+                self.app.pop_screen()
 
     def on_button_pressed(self, event) -> None:
-        if event.button.id == "refresh-btn":
-            self._refresh()
-        elif event.button.id == "back-btn":
-            self.app.pop_screen()
-        elif event.button.id == "quit-btn":
-            self.app.exit()
+        if event.button.id == "back-btn":
+            if self._current_disk is not None:
+                self._show_list()
+            else:
+                self.app.pop_screen()
+        elif event.button.id == "refresh-btn":
+            if not self._smart_loading and self._current_disk is None:
+                self._refresh()
+        elif event.button.id == "next-btn":
+            if self._current_disk and not self._smart_loading:
+                self.app.push_screen(ValidationConfigScreen(self._current_disk))
 
     def on_click(self, event) -> None:
+        if self._current_disk is not None:
+            return
         idx = getattr(event.widget, 'idx', None)
         if idx is not None and 0 <= idx < len(self._disks):
             self._selected = idx
             self._rebuild()
-            self._select()
+            self._select_disk()
 
-    def _select(self) -> None:
+    def _select_disk(self) -> None:
         if not self._disks:
             return
         disk = self._disks[self._selected]
         if not disk.is_supported:
             return
+        self._current_disk = disk
         session = find_session(disk)
         if session:
-            self.app.push_screen(SessionDecisionScreen(disk, session))
-        else:
-            self.app.push_screen(SmartTestScreen(disk))
+            total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
+            pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
+            self.query_one("#status-line").update(f"  Interrupted session ({pct}%) — press Enter to restart")
+            self._smart_data = None
+            self._rebuild()
+            return
+        self._smart_loading = True
+        self._show_loading(f"  {disk.model}  |  Running SMART Short Test...")
+        self._run_smart()
+
+    @work(thread=True)
+    def _run_smart(self) -> None:
+        disk = self._current_disk
+        if not disk:
+            return
+        try:
+            from obg.core.health import read_smart
+            sd = read_smart(disk.device)
+            self._smart_data = sd
+            self._smart_loading = False
+            status = f"  {disk.model}"
+            if sd:
+                status += f"  |  SMART: {sd.overall_health}  |  Temp: {sd.temperature or 'N/A'}C"
+            else:
+                status += "  |  SMART not available"
+            self.app.call_from_thread(self._update_status, status)
+        except Exception as e:
+            self._smart_loading = False
+            self.app.call_from_thread(self._update_status, f"  SMART error: {e}")
+
+    def _update_status(self, msg: str) -> None:
+        try:
+            self.query_one("#status-line").update(msg)
+            self.query_one("#next-btn").disabled = False
+            self.query_one(".footer").update("  Enter Continue   Esc Back")
+            self._rebuild()
+        except Exception:
+            pass
 
 
 class SessionDecisionScreen(Screen):
@@ -568,6 +709,9 @@ class ExecutionScreen(Screen):
         self._bb_progress_start = 0.0
         self._bb_eta = ""
         self._bb_operation = ""
+        self._bb_pattern = ""
+        self._bb_speed = 0.0
+        self._bb_errors = (0, 0, 0)
         self._last_pct_time = 0.0
         self._last_pct = 0.0
 
@@ -626,10 +770,14 @@ class ExecutionScreen(Screen):
         e = int(time.monotonic() - self._start_time)
         h, m, s = e // 3600, (e % 3600) // 60, e % 60
         parts = [f"  [C] Cancel  Elapsed: {h:02d}:{m:02d}:{s:02d}"]
-        if self._bb_operation and self._bb_progress > 0:
-            parts.append(f"  {self._bb_operation}  {self._bb_progress:.0f}%")
+        if self._bb_operation:
+            parts.append(f"  {self._bb_operation}")
+        if self._bb_progress > 0:
+            parts.append(f"  {self._bb_progress:.1f}%")
         if self._bb_eta:
             parts.append(f"  ETA: {self._bb_eta}")
+        if self._bb_speed > 0:
+            parts.append(f"  {self._bb_speed:.1f} MB/s")
         try:
             self.query_one(".footer").update(" |".join(parts))
         except Exception:
@@ -668,19 +816,26 @@ class ExecutionScreen(Screen):
             pass
         m = re.search(r'Testing with pattern (\S+):\s+([\d.]+)% done,\s+([\d:]+) elapsed', line)
         if m:
-            self._bb_operation = f"Writing {m.group(1)}"
+            self._bb_pattern = m.group(1)
+            self._bb_operation = f"Testing {self._bb_pattern}"
             now = time.monotonic()
             pct = float(m.group(2))
             self._bb_progress = pct
             self._bb_elapsed_str = m.group(3)
+            em = re.search(r'\((\d+)/(\d+)/(\d+)\)', line)
+            if em:
+                self._bb_errors = (int(em.group(1)), int(em.group(2)), int(em.group(3)))
             if pct > self._last_pct:
                 elapsed_since = now - self._last_pct_time
                 pct_delta = pct - self._last_pct
                 if elapsed_since > 0 and pct_delta > 0:
-                    rate = pct_delta / elapsed_since  # percent per second
+                    rate = pct_delta / elapsed_since
                     remaining_pct = 100 - pct
                     eta_s = remaining_pct / rate if rate > 0 else 0
                     self._bb_eta = self._format_eta(eta_s)
+                    total_bytes = self.disk.capacity_bytes
+                    if total_bytes > 0:
+                        self._bb_speed = (rate / 100) * total_bytes / 1_000_000
                 self._last_pct = pct
                 self._last_pct_time = now
             self._update_progress()
@@ -690,9 +845,14 @@ class ExecutionScreen(Screen):
             self.query_one("#bb-progress", ProgressBar).update(progress=self._bb_progress)
         except Exception:
             pass
-        info = f"  {self._bb_operation}  |  {self._bb_progress:.1f}%"
+        info = f"  Pattern: {self._bb_pattern}  |  {self._bb_progress:.1f}%"
         if self._bb_eta:
             info += f"  |  ETA: {self._bb_eta}"
+        if self._bb_speed > 0:
+            info += f"  |  {self._bb_speed:.1f} MB/s"
+        r, w, c = self._bb_errors
+        if r > 0 or w > 0 or c > 0:
+            info += f"  |  Bad: {r}/{w}/{c} (R/W/C)"
         try:
             self.query_one("#progress-info").update(info)
         except Exception:
@@ -796,10 +956,16 @@ class CompleteScreen(Screen):
     def _export_report(self) -> None:
         if self.result and self.result.report_path:
             self._report_exported = True
+            report_dir = os.path.dirname(self.result.report_path)
             try:
-                self.query_one(".footer").update(f"  Report saved: {self.result.report_path}  Q Quit")
+                subprocess.Popen(["xdg-open", report_dir],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.query_one(".footer").update(f"  Opening report folder...  Q Quit")
             except Exception:
-                pass
+                try:
+                    self.query_one(".footer").update(f"  Report: {self.result.report_path}  Q Quit")
+                except Exception:
+                    pass
         else:
             try:
                 self.query_one(".footer").update("  No report to export.  Q Quit")
