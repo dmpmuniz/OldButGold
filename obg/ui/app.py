@@ -59,6 +59,8 @@ class ObgApp(App):
     .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
     .status-bar { dock: top; padding: 0 1; background: #111111; color: #aaaaaa; border-bottom: solid #333333; height: 3; }
     .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
+    .metric-row { height: auto; }
+    .metric-row > .metric-box { width: 1fr; }
     """
 
     def on_mount(self) -> None:
@@ -170,31 +172,27 @@ class DriveSelectionScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static(f"OldButGold v{__version__}  |  Select Drive", classes="header")
         yield Static("  Select a drive to begin", id="status-line", classes="status-bar")
-        with VerticalScroll(id="content-area"):
-            yield Static("", id="content")
+        yield VerticalScroll(id="content")
         yield Horizontal(
             Button(" Back ", id="back-btn"),
             Button(" Refresh ", id="refresh-btn"),
             Button(" Continue ", id="next-btn", variant="default"),
             classes="btn-row",
         )
-        yield Static("  Up/Down Select   Enter Confirm   R Refresh   Esc Back   Q Quit", classes="footer")
+        yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back   Q Quit", classes="footer")
 
     def on_mount(self) -> None:
         self._refresh()
 
     def action_refresh(self) -> None:
         if not self._smart_loading:
-            self._reset()
+            self._current_disk = None
+            self._smart_data = None
+            self._smart_loading = False
             self._refresh()
 
     def action_quit(self) -> None:
         self.app.exit()
-
-    def _reset(self) -> None:
-        self._current_disk = None
-        self._smart_data = None
-        self._smart_loading = False
 
     def _refresh(self) -> None:
         try:
@@ -205,85 +203,83 @@ class DriveSelectionScreen(Screen):
         self._show_list()
 
     def _show_list(self) -> None:
-        self._reset()
-        self.query_one("#status-line").update("  Select a drive to begin")
-        self.query_one("#next-btn").disabled = True
-        self.query_one(".footer").update("  Up/Down Select   Enter Confirm   R Refresh   Esc Back   Q Quit")
+        self._current_disk = None
+        self._smart_data = None
+        self._smart_loading = False
+        try:
+            self.query_one("#status-line").update("  Select a drive to begin")
+            self.query_one("#next-btn").disabled = True
+        except Exception:
+            pass
         self._rebuild()
-
-    def _show_loading(self, msg: str) -> None:
-        self._rebuild()
-        self.query_one("#status-line").update(f"  {msg}")
-        self.query_one("#next-btn").disabled = True
 
     def _rebuild(self) -> None:
-        container = self.query_one("#content")
-        container.remove_children()
+        c = self.query_one("#content")
+        c.remove_children()
         if self._current_disk:
             if self._smart_loading:
-                self._build_loading()
+                self._build_loading(c)
             else:
-                self._build_info()
+                self._build_info(c)
         else:
-            self._build_list()
+            self._build_list(c)
 
-    def _build_list(self) -> None:
+    def _build_list(self, c) -> None:
         if not self._disks:
-            self.query_one("#content").mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
+            c.mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
             return
         for i, disk in enumerate(self._disks):
             if disk.is_supported:
                 selected = i == self._selected
-                css = "card-selected" if selected else "card"
-                sel_arrow = " >" if selected else "  "
-                lines = [
-                    f"{sel_arrow} {disk.model}",
-                    f"   {disk.device}  {disk.transport}  {disk.capacity_human}",
-                ]
+                sel = " \u25b6" if selected else "  "
+                lines = [f"{sel} {disk.model}", f"   {disk.device}  {disk.transport}  {disk.capacity_human}"]
                 session = find_session(disk)
                 if session:
                     total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
                     pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
-                    lines.append(f"   Interrupted Validation  —  {pct}% Completed")
-                widget = Static("\n".join(lines), classes=css)
+                    lines.append(f"   Interrupted  —  {pct}%")
+                widget = Static("\n".join(lines), classes="card-selected" if selected else "card")
             else:
-                lines = [
-                    f"   {disk.model}",
-                    f"   {disk.device}  {disk.capacity_human}  [Protected]",
-                ]
-                widget = Static("\n".join(lines), classes="card-disabled")
+                widget = Static(f"   {disk.model}\n   {disk.device}  {disk.capacity_human}  [Protected]",
+                                classes="card-disabled")
             widget.idx = i
-            self.query_one("#content").mount(widget)
+            c.mount(widget)
 
-    def _build_loading(self) -> None:
+    def _build_loading(self, c) -> None:
         d = self._current_disk
-        lines = [
-            f"  {d.model}",
-            f"  Serial: {d.serial}  |  Capacity: {d.capacity_human}",
-            "  Reading SMART data...",
-        ]
-        self.query_one("#content").mount(Static("\n".join(lines), classes="card"))
+        lines = [f"  {d.model}", f"  Serial: {d.serial}", f"  Capacity: {d.capacity_human}",
+                 "  \u23f3 Reading SMART data..."]
+        c.mount(Static("\n".join(lines), classes="card"))
 
-    def _build_info(self) -> None:
+    def _build_info(self, c) -> None:
         d = self._current_disk
         sd = self._smart_data
-        lines = [
-            f"  {d.model}",
-            f"  Serial: {d.serial}  |  Capacity: {d.capacity_human}",
-            f"  Transport: {d.transport}  |  Sector: {d.logical_sector}B/{d.physical_sector}B",
-        ]
+        def panel(title, *items):
+            return Static("\n".join([f"  {title}", ""] + [f"  {i}" for i in items]), classes="metric-box")
+        row1 = Horizontal(classes="metric-row")
+        row1.mount(panel("Device", f"Model: {d.model}", f"Serial: {d.serial}", f"Capacity: {d.capacity_human}",
+                          f"Interface: {d.transport}"))
         if sd:
-            lines.append(f"  SMART: {sd.overall_health}  |  Temp: {sd.temperature or 'N/A'}C  |  POH: {sd.power_on_hours or 'N/A'}h")
-            lines.append(f"  Realloc: {sd.reallocated_sectors}  |  Pending: {sd.pending_sectors}  |  Uncorr: {sd.uncorrectable_sectors}")
+            row1.mount(panel("SMART", f"Health: {sd.overall_health}", f"Temp: {sd.temperature or 'N/A'}\u00b0C",
+                              f"Power-on: {sd.power_on_hours or 'N/A'}h"))
         else:
-            lines.append("  SMART not available")
-        self.query_one("#content").mount(Static("\n".join(lines), classes="card"))
+            row1.mount(panel("SMART", "Not available"))
+        c.mount(row1)
+        row2 = Horizontal(classes="metric-row")
+        if sd:
+            row2.mount(panel("Sectors", f"Reallocated: {sd.reallocated_sectors}",
+                              f"Pending: {sd.pending_sectors}", f"Uncorrectable: {sd.uncorrectable_sectors}"))
+        row2.mount(panel("Status", "SMART data collected" if sd else "Ready to validate",
+                          "Press Continue to proceed"))
+        c.mount(row2)
 
     def on_key(self, event) -> None:
         if event.key == "up":
             if self._current_disk is None:
                 self._selected = max(0, self._selected - 1)
                 self._rebuild()
+            else:
+                self._show_list()
         elif event.key == "down":
             if self._current_disk is None:
                 self._selected = min(len(self._disks) - 1, self._selected + 1)
@@ -332,12 +328,20 @@ class DriveSelectionScreen(Screen):
         if session:
             total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
             pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
-            self.query_one("#status-line").update(f"  Interrupted session ({pct}%) — press Enter to restart")
+            try:
+                self.query_one("#status-line").update(f"  Interrupted session ({pct}%) — Enter to restart")
+            except Exception:
+                pass
             self._smart_data = None
             self._rebuild()
             return
         self._smart_loading = True
-        self._show_loading(f"  {disk.model}  |  Running SMART Short Test...")
+        try:
+            self.query_one("#status-line").update(f"  {disk.model}  |  \u23f3 Running SMART Short Test...")
+            self.query_one("#next-btn").disabled = True
+        except Exception:
+            pass
+        self._rebuild()
         self._run_smart()
 
     @work(thread=True)
@@ -352,7 +356,7 @@ class DriveSelectionScreen(Screen):
             self._smart_loading = False
             status = f"  {disk.model}"
             if sd:
-                status += f"  |  SMART: {sd.overall_health}  |  Temp: {sd.temperature or 'N/A'}C"
+                status += f"  |  SMART: {sd.overall_health}  |  Temp: {sd.temperature or 'N/A'}\u00b0C"
             else:
                 status += "  |  SMART not available"
             self.app.call_from_thread(self._update_status, status)
@@ -364,7 +368,6 @@ class DriveSelectionScreen(Screen):
         try:
             self.query_one("#status-line").update(msg)
             self.query_one("#next-btn").disabled = False
-            self.query_one(".footer").update("  Enter Continue   Esc Back")
             self._rebuild()
         except Exception:
             pass
