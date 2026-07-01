@@ -31,7 +31,12 @@ def main() -> None:
         binary = os.path.abspath(sys.argv[0])
         if not sys.stdout.isatty():
             import shutil
-            for term_cmd in ("xterm", "x-terminal-emulator"):
+            for term_cmd in ("ptyxis", "gnome-terminal"):
+                term = shutil.which(term_cmd)
+                if term:
+                    logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
+                    os.execvp(term, [term, "--", "pkexec", binary] + sys.argv[1:])
+            for term_cmd in ("kgx", "konsole", "xfce4-terminal", "lxterminal", "xterm", "x-terminal-emulator"):
                 term = shutil.which(term_cmd)
                 if term:
                     logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
