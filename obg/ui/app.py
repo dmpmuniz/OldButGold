@@ -72,9 +72,35 @@ class ObgApp(App):
 
 
 class StartupScreen(Screen):
+    BINDINGS = [
+        ("left", "left", "", priority=True),
+        ("right", "right", "", priority=True),
+        ("enter", "enter", "Proceed", priority=True),
+        ("escape", "escape", "Exit", priority=True),
+    ]
+
     def __init__(self):
         super().__init__()
         self._selected = 0
+
+    def action_left(self) -> None:
+        self._selected = 0
+        self._update_buttons()
+
+    def action_right(self) -> None:
+        self._selected = 1
+        self._update_buttons()
+
+    def action_enter(self) -> None:
+        if self._selected == 0:
+            btn = self.query_one("#continue-btn")
+            if not btn.disabled:
+                self.app.push_screen(DriveSelectionScreen())
+        else:
+            self.app.exit()
+
+    def action_escape(self) -> None:
+        self.app.exit()
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
@@ -105,23 +131,6 @@ class StartupScreen(Screen):
 
     def on_mount(self) -> None:
         self._init()
-
-    def on_key(self, event) -> None:
-        if event.key == "escape":
-            self.app.exit()
-        elif event.key == "right":
-            self._selected = 1
-            self._update_buttons()
-        elif event.key == "left":
-            self._selected = 0
-            self._update_buttons()
-        elif event.key == "enter":
-            if self._selected == 0:
-                btn = self.query_one("#continue-btn")
-                if not btn.disabled:
-                    self.app.push_screen(DriveSelectionScreen())
-            else:
-                self.app.exit()
 
     def _update_buttons(self) -> None:
         try:
