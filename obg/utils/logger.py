@@ -17,9 +17,7 @@ _ORIGINAL_EXCEPTHOOK: object | None = None
 def setup() -> Path:
     global _LOG_FILE, _ORIGINAL_EXCEPTHOOK
     ts = time.strftime("%Y%m%d_%H%M%S")
-    cache_home = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    log_dir = Path(cache_home) / "obg"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = Path(os.getcwd())
     _LOG_FILE = log_dir / f"obg_{ts}.log"
 
     _write_raw("=" * 70)
