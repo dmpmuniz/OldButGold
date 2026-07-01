@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, VerticalScroll, Horizontal
 from textual.screen import Screen
 from textual.widgets import Static, Button, Input, ProgressBar
@@ -73,10 +74,10 @@ class ObgApp(App):
 
 class StartupScreen(Screen):
     BINDINGS = [
-        ("left", "left", "", priority=True),
-        ("right", "right", "", priority=True),
-        ("enter", "enter", "Proceed", priority=True),
-        ("escape", "escape", "Exit", priority=True),
+        Binding("left", "left", "", priority=True),
+        Binding("right", "right", "", priority=True),
+        Binding("enter", "enter", "Proceed", priority=True),
+        Binding("escape", "escape", "Exit", priority=True),
     ]
 
     def __init__(self):

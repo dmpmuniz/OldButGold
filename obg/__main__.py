@@ -6,6 +6,7 @@ import sys
 
 def main() -> None:
     from obg import __version__
+    from obg.ui.app import ObgApp
     from obg.utils import logger
     logger.setup()
     logger.info("MAIN", "OldButGold started")
@@ -53,7 +54,6 @@ def main() -> None:
     sys.stdout.write("\x1b[8;30;100t")
     sys.stdout.flush()
 
-    from obg.ui.app import ObgApp
     try:
         ObgApp(test_mode=test_mode).run()
     except Exception as e:
