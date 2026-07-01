@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+
+rich_unicode = collect_submodules('rich._unicode_data')
 
 a = Analysis(
     ['obg/__main__.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=collect_data_files('rich._unicode_data'),
+    hiddenimports=rich_unicode,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

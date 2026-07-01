@@ -101,7 +101,7 @@ class StartupScreen(Screen):
                 Button(" Exit ", id="exit-btn", classes="startup-btn"),
                 classes="btn-row",
             )
-            yield Static("  Initializing...  ← → Navigate  Enter Select  Esc Exit", id="footer")
+            yield Static("  Initializing...  < > Navigate  Enter Select  Esc Exit", id="footer")
 
     def on_mount(self) -> None:
         self._init()
@@ -152,7 +152,7 @@ class StartupScreen(Screen):
         try:
             self.query_one("#init-status").update(f"  Detected {len(disks)} drive(s). Ready.")
             self.query_one("#continue-btn").disabled = False
-            self.query_one("#footer").update("  ← → Navigate  Enter Select  Esc Exit")
+            self.query_one("#footer").update("  Arrows Navigate  Enter Select  Esc Exit")
         except Exception:
             pass
 
@@ -175,14 +175,15 @@ class DriveSelectionScreen(Screen):
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Select Drive", id="header")
             with Container(id="body"):
-                yield VerticalScroll(id="disk-content")
+                pass
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
+                Button(" Continue ", id="continue-btn"),
                 Button(" Refresh ", id="refresh-btn"),
                 Button(" Quit ", id="quit-btn"),
                 classes="btn-row",
             )
-            yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", id="footer")
+            yield Static("  ^/v Select   Enter Confirm   R Refresh   Esc Back", id="footer")
 
     def on_mount(self) -> None:
         self._refresh()
@@ -199,7 +200,7 @@ class DriveSelectionScreen(Screen):
         self._rebuild()
 
     def _rebuild(self) -> None:
-        c = self.query_one("#disk-content")
+        c = self.query_one("#body")
         c.remove_children()
         if not self._disks:
             c.mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
@@ -212,7 +213,7 @@ class DriveSelectionScreen(Screen):
                 if session:
                     total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
                     pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
-                    lines.append(f"  \u26a0 Interrupted Validation  \u2014  {pct}%")
+                    lines.append(f"  ! Interrupted Validation  -  {pct}%")
                 widget = Static("\n".join(lines), classes="card-selected" if selected else "card")
             else:
                 widget = Static(f"  {disk.model}\n  {disk.device}  {disk.capacity_human}  [Protected]",
@@ -235,6 +236,8 @@ class DriveSelectionScreen(Screen):
     def on_button_pressed(self, event) -> None:
         if event.button.id == "back-btn":
             self.app.pop_screen()
+        elif event.button.id == "continue-btn":
+            self._select()
         elif event.button.id == "refresh-btn":
             self._refresh()
         elif event.button.id == "quit-btn":
