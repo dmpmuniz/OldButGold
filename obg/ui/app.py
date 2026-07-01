@@ -24,7 +24,7 @@ class ObgApp(App):
         self.test_mode = test_mode
 
     CSS = """
-    Screen { background: #0a0a0a; color: #cccccc; }
+    Screen { background: #000000; color: #cccccc; border: solid #444444; padding: 0 1; }
     .header { dock: top; padding: 0 1; background: #111111; color: #cccccc; border-bottom: solid #333333; }
     .footer { dock: bottom; padding: 0 1; background: #111111; color: #666666; border-top: solid #333333; }
     .card { border: solid #333333; margin: 0 1 1 1; padding: 0 1; }
@@ -64,6 +64,10 @@ class ObgApp(App):
     """
 
     def on_mount(self) -> None:
+        import sys
+        import os
+        sys.stdout.write("\x1b[8;30;100t")
+        sys.stdout.flush()
         self.push_screen(StartupScreen())
 
 

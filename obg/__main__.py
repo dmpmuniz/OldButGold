@@ -43,6 +43,10 @@ def main() -> None:
 
     logger.info("MAIN", "Running with elevated privileges")
 
+    # Resize terminal to 100×30 for consistent layout
+    sys.stdout.write("\x1b[8;30;100t")
+    sys.stdout.flush()
+
     from obg.ui.app import ObgApp
     try:
         ObgApp(test_mode=test_mode).run()
