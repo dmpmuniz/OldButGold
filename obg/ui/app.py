@@ -27,9 +27,9 @@ class ObgApp(App):
     CSS = """
     Screen { background: #000000; align: center middle; }
     #app-frame { width: 100; height: 30; border: solid #444444; background: #0a0a0a; layout: vertical; }
-    #header { height: 1; background: #111111; color: #cccccc; border-bottom: solid #333333; padding: 0 1; }
+    #header { dock: top; height: 1; background: #111111; color: #cccccc; border-bottom: solid #333333; padding: 0 1; }
     #body { height: 1fr; overflow-y: auto; }
-    #footer { height: 1; background: #111111; color: #666666; border-top: solid #333333; padding: 0 1; }
+    #footer { dock: bottom; height: 1; background: #111111; color: #666666; border-top: solid #333333; padding: 0 1; }
     .card { border: solid #333333; margin: 0 1 1 1; padding: 0 1; }
     .card-selected { border: solid #1a1a2e; margin: 0 1 1 1; padding: 0 1; background: #1a1a2e; }
     .card:hover { background: #1a1a2e; }
