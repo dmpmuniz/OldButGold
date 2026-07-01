@@ -3,7 +3,7 @@ import os
 import subprocess
 import time
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll, Horizontal
+from textual.containers import Container, VerticalScroll, Horizontal
 from textual.screen import Screen
 from textual.widgets import Static, Button, Input, ProgressBar
 from textual import work
