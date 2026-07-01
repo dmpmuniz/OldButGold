@@ -159,40 +159,30 @@ class StartupScreen(Screen):
 
 
 class DriveSelectionScreen(Screen):
-    BINDINGS = [("r", "refresh", "Refresh"), ("q", "quit", "Quit")]
+    BINDINGS = [("r", "refresh", "Refresh")]
 
     def __init__(self) -> None:
         super().__init__()
         self._disks: list[DiskInfo] = []
         self._selected = 0
-        self._current_disk: DiskInfo | None = None
-        self._smart_data = None
-        self._smart_loading = False
 
     def compose(self) -> ComposeResult:
         yield Static(f"OldButGold v{__version__}  |  Select Drive", classes="header")
-        yield Static("  Select a drive to begin", id="status-line", classes="status-bar")
-        yield VerticalScroll(id="content")
+        with VerticalScroll(id="disk-list"):
+            yield Static("", id="disk-content")
         yield Horizontal(
             Button(" Back ", id="back-btn"),
             Button(" Refresh ", id="refresh-btn"),
-            Button(" Continue ", id="next-btn", variant="default"),
+            Button(" Quit ", id="quit-btn"),
             classes="btn-row",
         )
-        yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back   Q Quit", classes="footer")
+        yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", classes="footer")
 
     def on_mount(self) -> None:
         self._refresh()
 
     def action_refresh(self) -> None:
-        if not self._smart_loading:
-            self._current_disk = None
-            self._smart_data = None
-            self._smart_loading = False
-            self._refresh()
-
-    def action_quit(self) -> None:
-        self.app.exit()
+        self._refresh()
 
     def _refresh(self) -> None:
         try:
@@ -200,177 +190,68 @@ class DriveSelectionScreen(Screen):
         except Exception:
             self._disks = []
         self._selected = 0
-        self._show_list()
-
-    def _show_list(self) -> None:
-        self._current_disk = None
-        self._smart_data = None
-        self._smart_loading = False
-        try:
-            self.query_one("#status-line").update("  Select a drive to begin")
-            self.query_one("#next-btn").disabled = True
-        except Exception:
-            pass
         self._rebuild()
 
     def _rebuild(self) -> None:
-        c = self.query_one("#content")
+        c = self.query_one("#disk-content")
         c.remove_children()
-        if self._current_disk:
-            if self._smart_loading:
-                self._build_loading(c)
-            else:
-                self._build_info(c)
-        else:
-            self._build_list(c)
-
-    def _build_list(self, c) -> None:
         if not self._disks:
             c.mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
             return
         for i, disk in enumerate(self._disks):
             if disk.is_supported:
                 selected = i == self._selected
-                sel = " \u25b6" if selected else "  "
-                lines = [f"{sel} {disk.model}", f"   {disk.device}  {disk.transport}  {disk.capacity_human}"]
+                lines = [f"  {disk.model}", f"  {disk.device}  {disk.transport}  {disk.capacity_human}"]
                 session = find_session(disk)
                 if session:
                     total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
                     pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
-                    lines.append(f"   Interrupted  —  {pct}%")
+                    lines.append(f"  \u26a0 Interrupted Validation  \u2014  {pct}%")
                 widget = Static("\n".join(lines), classes="card-selected" if selected else "card")
             else:
-                widget = Static(f"   {disk.model}\n   {disk.device}  {disk.capacity_human}  [Protected]",
+                widget = Static(f"  {disk.model}\n  {disk.device}  {disk.capacity_human}  [Protected]",
                                 classes="card-disabled")
             widget.idx = i
             c.mount(widget)
 
-    def _build_loading(self, c) -> None:
-        d = self._current_disk
-        lines = [f"  {d.model}", f"  Serial: {d.serial}", f"  Capacity: {d.capacity_human}",
-                 "  \u23f3 Reading SMART data..."]
-        c.mount(Static("\n".join(lines), classes="card"))
-
-    def _build_info(self, c) -> None:
-        d = self._current_disk
-        sd = self._smart_data
-        def panel(title, *items):
-            return Static("\n".join([f"  {title}", ""] + [f"  {i}" for i in items]), classes="metric-box")
-        row1 = Horizontal(classes="metric-row")
-        row1.mount(panel("Device", f"Model: {d.model}", f"Serial: {d.serial}", f"Capacity: {d.capacity_human}",
-                          f"Interface: {d.transport}"))
-        if sd:
-            row1.mount(panel("SMART", f"Health: {sd.overall_health}", f"Temp: {sd.temperature or 'N/A'}\u00b0C",
-                              f"Power-on: {sd.power_on_hours or 'N/A'}h"))
-        else:
-            row1.mount(panel("SMART", "Not available"))
-        c.mount(row1)
-        row2 = Horizontal(classes="metric-row")
-        if sd:
-            row2.mount(panel("Sectors", f"Reallocated: {sd.reallocated_sectors}",
-                              f"Pending: {sd.pending_sectors}", f"Uncorrectable: {sd.uncorrectable_sectors}"))
-        row2.mount(panel("Status", "SMART data collected" if sd else "Ready to validate",
-                          "Press Continue to proceed"))
-        c.mount(row2)
-
     def on_key(self, event) -> None:
         if event.key == "up":
-            if self._current_disk is None:
-                self._selected = max(0, self._selected - 1)
-                self._rebuild()
-            else:
-                self._show_list()
+            self._selected = max(0, self._selected - 1)
+            self._rebuild()
         elif event.key == "down":
-            if self._current_disk is None:
-                self._selected = min(len(self._disks) - 1, self._selected + 1)
-                self._rebuild()
+            self._selected = min(len(self._disks) - 1, self._selected + 1)
+            self._rebuild()
         elif event.key == "enter":
-            if self._current_disk is None:
-                self._select_disk()
-            else:
-                self.app.push_screen(ValidationConfigScreen(self._current_disk))
+            self._select()
         elif event.key == "escape":
-            if self._current_disk is not None:
-                self._show_list()
-            else:
-                self.app.pop_screen()
+            self.app.pop_screen()
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "back-btn":
-            if self._current_disk is not None:
-                self._show_list()
-            else:
-                self.app.pop_screen()
+            self.app.pop_screen()
         elif event.button.id == "refresh-btn":
-            if not self._smart_loading and self._current_disk is None:
-                self._refresh()
-        elif event.button.id == "next-btn":
-            if self._current_disk and not self._smart_loading:
-                self.app.push_screen(ValidationConfigScreen(self._current_disk))
+            self._refresh()
+        elif event.button.id == "quit-btn":
+            self.app.exit()
 
     def on_click(self, event) -> None:
-        if self._current_disk is not None:
-            return
         idx = getattr(event.widget, 'idx', None)
         if idx is not None and 0 <= idx < len(self._disks):
             self._selected = idx
             self._rebuild()
-            self._select_disk()
+            self._select()
 
-    def _select_disk(self) -> None:
+    def _select(self) -> None:
         if not self._disks:
             return
         disk = self._disks[self._selected]
         if not disk.is_supported:
             return
-        self._current_disk = disk
         session = find_session(disk)
         if session:
-            total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
-            pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
-            try:
-                self.query_one("#status-line").update(f"  Interrupted session ({pct}%) — Enter to restart")
-            except Exception:
-                pass
-            self._smart_data = None
-            self._rebuild()
-            return
-        self._smart_loading = True
-        try:
-            self.query_one("#status-line").update(f"  {disk.model}  |  \u23f3 Running SMART Short Test...")
-            self.query_one("#next-btn").disabled = True
-        except Exception:
-            pass
-        self._rebuild()
-        self._run_smart()
-
-    @work(thread=True)
-    def _run_smart(self) -> None:
-        disk = self._current_disk
-        if not disk:
-            return
-        try:
-            from obg.core.health import read_smart
-            sd = read_smart(disk.device)
-            self._smart_data = sd
-            self._smart_loading = False
-            status = f"  {disk.model}"
-            if sd:
-                status += f"  |  SMART: {sd.overall_health}  |  Temp: {sd.temperature or 'N/A'}\u00b0C"
-            else:
-                status += "  |  SMART not available"
-            self.app.call_from_thread(self._update_status, status)
-        except Exception as e:
-            self._smart_loading = False
-            self.app.call_from_thread(self._update_status, f"  SMART error: {e}")
-
-    def _update_status(self, msg: str) -> None:
-        try:
-            self.query_one("#status-line").update(msg)
-            self.query_one("#next-btn").disabled = False
-            self._rebuild()
-        except Exception:
-            pass
+            self.app.push_screen(SessionDecisionScreen(disk, session))
+        else:
+            self.app.push_screen(SmartTestScreen(disk))
 
 
 class SessionDecisionScreen(Screen):
@@ -399,6 +280,7 @@ class SessionDecisionScreen(Screen):
             yield Horizontal(
                 Button(" Recover ", id="recover-btn"),
                 Button(" Restart ", id="restart-btn"),
+                Button(" View Details ", id="details-btn"),
                 Button(" Back ", id="back-btn"),
                 classes="btn-row",
             )
@@ -408,6 +290,7 @@ class SessionDecisionScreen(Screen):
         if event.key == "escape":
             self.app.pop_screen()
         elif event.key == "enter":
+            complete_session(self.disk)
             self.app.push_screen(SmartTestScreen(self.disk))
 
     def on_button_pressed(self, event) -> None:
@@ -418,6 +301,8 @@ class SessionDecisionScreen(Screen):
         elif event.button.id == "restart-btn":
             complete_session(self.disk)
             self.app.push_screen(SmartTestScreen(self.disk))
+        elif event.button.id == "details-btn":
+            self.app.push_screen(DriveInfoScreen(self.disk, None))
         elif event.button.id == "back-btn":
             self.app.pop_screen()
 
