@@ -24,9 +24,11 @@ class ObgApp(App):
         self.test_mode = test_mode
 
     CSS = """
-    Screen { background: #000000; color: #cccccc; border: solid #444444; padding: 0 1; }
-    .header { dock: top; padding: 0 1; background: #111111; color: #cccccc; border-bottom: solid #333333; }
-    .footer { dock: bottom; padding: 0 1; background: #111111; color: #666666; border-top: solid #333333; }
+    Screen { background: #000000; align: center middle; }
+    #app-frame { width: 130; height: 40; border: solid #444444; background: #0a0a0a; layout: vertical; }
+    #header { height: 1; background: #111111; color: #cccccc; border-bottom: solid #333333; padding: 0 1; }
+    #body { height: 1fr; overflow-y: auto; }
+    #footer { height: 1; background: #111111; color: #666666; border-top: solid #333333; padding: 0 1; }
     .card { border: solid #333333; margin: 0 1 1 1; padding: 0 1; }
     .card-selected { border: solid #1a1a2e; margin: 0 1 1 1; padding: 0 1; background: #1a1a2e; }
     .card:hover { background: #1a1a2e; }
@@ -57,7 +59,6 @@ class ObgApp(App):
     ProgressBar { margin: 0 2; }
     .startup-btn { width: 1fr; margin: 0 1; }
     .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
-    .status-bar { dock: top; padding: 0 1; background: #111111; color: #aaaaaa; border-bottom: solid #333333; height: 3; }
     .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
     .metric-row { height: auto; }
     .metric-row > .metric-box { width: 1fr; }
@@ -66,7 +67,7 @@ class ObgApp(App):
     def on_mount(self) -> None:
         import sys
         import os
-        sys.stdout.write("\x1b[8;30;100t")
+        sys.stdout.write("\x1b[8;40;130t")
         sys.stdout.flush()
         self.push_screen(StartupScreen())
 
@@ -77,30 +78,31 @@ class StartupScreen(Screen):
         self._selected = 0
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  HDD Revival Toolkit", classes="header")
-        with VerticalScroll():
-            yield Static("", classes="config-group")
-            yield Static("  OLD BUT GOLD", classes="group-title")
-            yield Static("  HDD Validation & Refurbishment Toolkit", classes="config-group")
-            yield Static("", classes="config-group")
-            yield Static("  Legal Disclaimer", classes="group-title")
-            yield Static(
-                "  OldButGold performs hardware validation using industry-standard diagnostic utilities.\n"
-                "  Validation results reflect only the observed condition of the storage device during execution.\n"
-                "  No report constitutes a guarantee of future reliability, data integrity or continued operation.\n"
-                "  Storage devices may fail without prior warning. The user remains solely responsible for\n"
-                "  backup, data protection and all decisions made based on this report.\n"
-                "  Use of this software is entirely at the user's own risk.",
-                classes="config-group",
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  HDD Revival Toolkit", id="header")
+            with VerticalScroll(id="body"):
+                yield Static("", classes="config-group")
+                yield Static("  OLD BUT GOLD", classes="group-title")
+                yield Static("  HDD Validation & Refurbishment Toolkit", classes="config-group")
+                yield Static("", classes="config-group")
+                yield Static("  Legal Disclaimer", classes="group-title")
+                yield Static(
+                    "  OldButGold performs hardware validation using industry-standard diagnostic utilities.\n"
+                    "  Validation results reflect only the observed condition of the storage device during execution.\n"
+                    "  No report constitutes a guarantee of future reliability, data integrity or continued operation.\n"
+                    "  Storage devices may fail without prior warning. The user remains solely responsible for\n"
+                    "  backup, data protection and all decisions made based on this report.\n"
+                    "  Use of this software is entirely at the user's own risk.",
+                    classes="config-group",
+                )
+                yield Static("", classes="config-group")
+                yield Static("  Initializing...", id="init-status", classes="config-group")
+            yield Horizontal(
+                Button(" Continue ", id="continue-btn", classes="startup-btn selected", disabled=True),
+                Button(" Exit ", id="exit-btn", classes="startup-btn"),
+                classes="btn-row",
             )
-            yield Static("", classes="config-group")
-            yield Static("  Initializing...", id="init-status", classes="config-group")
-        yield Horizontal(
-            Button(" Continue ", id="continue-btn", classes="startup-btn selected", disabled=True),
-            Button(" Exit ", id="exit-btn", classes="startup-btn"),
-            classes="btn-row",
-        )
-        yield Static("  Initializing...  ← → Navigate  Enter Select  Esc Exit", classes="footer")
+            yield Static("  Initializing...  ← → Navigate  Enter Select  Esc Exit", id="footer")
 
     def on_mount(self) -> None:
         self._init()
@@ -151,7 +153,7 @@ class StartupScreen(Screen):
         try:
             self.query_one("#init-status").update(f"  Detected {len(disks)} drive(s). Ready.")
             self.query_one("#continue-btn").disabled = False
-            self.query_one(".footer").update("  ← → Navigate  Enter Select  Esc Exit")
+            self.query_one("#footer").update("  ← → Navigate  Enter Select  Esc Exit")
         except Exception:
             pass
 
@@ -171,16 +173,17 @@ class DriveSelectionScreen(Screen):
         self._selected = 0
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  Select Drive", classes="header")
-        with VerticalScroll(id="disk-list"):
-            yield Static("", id="disk-content")
-        yield Horizontal(
-            Button(" Back ", id="back-btn"),
-            Button(" Refresh ", id="refresh-btn"),
-            Button(" Quit ", id="quit-btn"),
-            classes="btn-row",
-        )
-        yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", classes="footer")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Select Drive", id="header")
+            with VerticalScroll(id="body"):
+                yield VerticalScroll(id="disk-content")
+            yield Horizontal(
+                Button(" Back ", id="back-btn"),
+                Button(" Refresh ", id="refresh-btn"),
+                Button(" Quit ", id="quit-btn"),
+                classes="btn-row",
+            )
+            yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", id="footer")
 
     def on_mount(self) -> None:
         self._refresh()
@@ -267,20 +270,20 @@ class SessionDecisionScreen(Screen):
     def compose(self) -> ComposeResult:
         total_blocks = self.disk.capacity_bytes // 4096 if self.disk.capacity_bytes else 1
         pct = min(99, int(self.session.get("badblocks_offset", 0) / total_blocks * 100))
-        yield Static(f"OldButGold v{__version__}  |  Session Recovery", classes="header")
-        with VerticalScroll():
-            yield Static("  Interrupted Validation Session", classes="group-title")
-            yield Static("")
-            yield Static(f"  Model:         {self.disk.model}")
-            yield Static(f"  Serial:        {self.disk.serial}")
-            yield Static(f"  Capacity:      {self.disk.capacity_human}")
-            yield Static(f"  Current Stage: {self.session.get('current_stage', 'Badblocks Validation')}")
-            yield Static(f"  Completed:     {pct}%")
-            yield Static(f"  Started:       {self.session.get('created_at', 'Unknown')}")
-            yield Static("")
-            yield Static("  This drive has an interrupted validation session.", classes="config-group")
-            yield Static("  What would you like to do?", classes="config-group")
-            yield Static("", classes="config-group")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Session Recovery", id="header")
+            with VerticalScroll(id="body"):
+                yield Static("  Interrupted Validation Session", classes="group-title")
+                yield Static("")
+                yield Static(f"  Model:         {self.disk.model}")
+                yield Static(f"  Serial:        {self.disk.serial}")
+                yield Static(f"  Capacity:      {self.disk.capacity_human}")
+                yield Static(f"  Current Stage: {self.session.get('current_stage', 'Badblocks Validation')}")
+                yield Static(f"  Completed:     {pct}%")
+                yield Static(f"  Started:       {self.session.get('created_at', 'Unknown')}")
+                yield Static("")
+                yield Static("  This drive has an interrupted validation session.", classes="config-group")
+                yield Static("  What would you like to do?", classes="config-group")
             yield Horizontal(
                 Button(" Recover ", id="recover-btn"),
                 Button(" Restart ", id="restart-btn"),
@@ -288,7 +291,7 @@ class SessionDecisionScreen(Screen):
                 Button(" Back ", id="back-btn"),
                 classes="btn-row",
             )
-        yield Static("  Enter Select   Esc Back", classes="footer")
+            yield Static("  Enter Select   Esc Back", id="footer")
 
     def on_key(self, event) -> None:
         if event.key == "escape":
@@ -317,16 +320,17 @@ class SmartTestScreen(Screen):
         self.disk = disk
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  SMART Short Self-Test", classes="header")
-        with VerticalScroll():
-            yield Static("  Running SMART Short Self-Test...", classes="group-title")
-            yield Static("", classes="config-group")
-            yield Static(f"  Device: {self.disk.device}", classes="config-group")
-            yield Static(f"  Model:  {self.disk.model}", classes="config-group")
-            yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
-            yield Static("", classes="config-group")
-            yield Static("  This may take up to 2 minutes.", id="test-status", classes="config-group")
-        yield Static("  Please wait...", classes="footer")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  SMART Short Self-Test", id="header")
+            with VerticalScroll(id="body"):
+                yield Static("  Running SMART Short Self-Test...", classes="group-title")
+                yield Static("", classes="config-group")
+                yield Static(f"  Device: {self.disk.device}", classes="config-group")
+                yield Static(f"  Model:  {self.disk.model}", classes="config-group")
+                yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
+                yield Static("", classes="config-group")
+                yield Static("  This may take up to 2 minutes.", id="test-status", classes="config-group")
+            yield Static("  Please wait...", id="footer")
 
     def on_mount(self) -> None:
         self._run_test()
@@ -360,36 +364,37 @@ class DriveInfoScreen(Screen):
         self._smart_data = smart_data
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  {self.disk.model}", classes="header")
-        with VerticalScroll():
-            with Horizontal():
-                with VerticalScroll(classes="panel-box"):
-                    yield Static("  Device Information", classes="group-title")
-                    yield Static(f"  Model:  {self.disk.model}")
-                    yield Static(f"  Serial: {self.disk.serial}")
-                    yield Static(f"  Firmware: {self.disk.firmware}")
-                    yield Static(f"  Capacity: {self.disk.capacity_human}")
-                with VerticalScroll(classes="panel-box"):
-                    yield Static("  Configuration", classes="group-title")
-                    yield Static(f"  Interface: {self.disk.transport}")
-                    yield Static(f"  SMART: {'Supported' if self.disk.smart_supported else 'Not available'}")
-                    yield Static(f"  Current FS: {self.disk.current_fs or 'None'}")
-                    yield Static(f"  Partition: {self.disk.partition_table or 'None'}")
-            with Horizontal():
-                with VerticalScroll(classes="panel-box"):
-                    yield Static("  SMART Information", classes="group-title")
-                    yield Static("  Reading SMART data...", id="smart-panel")
-                with VerticalScroll(classes="panel-box"):
-                    yield Static("  Geometry", classes="group-title")
-                    yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
-                    yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
-                    yield Static(f"  RPM: {self.disk.rpm or 'N/A'}")
-        yield Horizontal(
-            Button(" Continue ", id="continue-btn"),
-            Button(" Back ", id="back-btn"),
-            classes="btn-row",
-        )
-        yield Static("  Esc Back   Enter Continue", classes="footer")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  {self.disk.model}", id="header")
+            with VerticalScroll(id="body"):
+                with Horizontal():
+                    with VerticalScroll(classes="panel-box"):
+                        yield Static("  Device Information", classes="group-title")
+                        yield Static(f"  Model:  {self.disk.model}")
+                        yield Static(f"  Serial: {self.disk.serial}")
+                        yield Static(f"  Firmware: {self.disk.firmware}")
+                        yield Static(f"  Capacity: {self.disk.capacity_human}")
+                    with VerticalScroll(classes="panel-box"):
+                        yield Static("  Configuration", classes="group-title")
+                        yield Static(f"  Interface: {self.disk.transport}")
+                        yield Static(f"  SMART: {'Supported' if self.disk.smart_supported else 'Not available'}")
+                        yield Static(f"  Current FS: {self.disk.current_fs or 'None'}")
+                        yield Static(f"  Partition: {self.disk.partition_table or 'None'}")
+                with Horizontal():
+                    with VerticalScroll(classes="panel-box"):
+                        yield Static("  SMART Information", classes="group-title")
+                        yield Static("  Reading SMART data...", id="smart-panel")
+                    with VerticalScroll(classes="panel-box"):
+                        yield Static("  Geometry", classes="group-title")
+                        yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
+                        yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
+                        yield Static(f"  RPM: {self.disk.rpm or 'N/A'}")
+            yield Horizontal(
+                Button(" Continue ", id="continue-btn"),
+                Button(" Back ", id="back-btn"),
+                classes="btn-row",
+            )
+            yield Static("  Esc Back   Enter Continue", id="footer")
 
     def on_mount(self) -> None:
         if self._smart_data is not None:
@@ -448,25 +453,25 @@ class ValidationConfigScreen(Screen):
         self._fs_idx = self.FS_OPTIONS.index(self.config["filesystem"]) if self.config["filesystem"] in self.FS_OPTIONS else 0
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  Configuration", classes="header")
-        with VerticalScroll():
-            yield Static("  Validation Profile", classes="group-title")
-            for p in self.PROFILES:
-                marker = "(*)" if p.lower() == self.PROFILES[self._profile_idx].lower() else "( )"
-                yield Static(f"  {marker} {p}", id=f"prof-{p.lower()}", classes="config-group")
-            yield Static("  Filesystem", classes="config-label")
-            for f in self.FS_OPTIONS:
-                marker = "(*)" if f == self.FS_OPTIONS[self._fs_idx] else "( )"
-                yield Static(f"  {marker} {f}", id=f"fs-{f}", classes="config-group")
-            yield Static("  Volume Label (optional)", classes="config-label")
-            yield Input(value=self.config.get("label", ""), id="label-input", classes="config-group")
-            yield Static("", classes="config-group")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Configuration", id="header")
+            with VerticalScroll(id="body"):
+                yield Static("  Validation Profile", classes="group-title")
+                for p in self.PROFILES:
+                    marker = "(*)" if p.lower() == self.PROFILES[self._profile_idx].lower() else "( )"
+                    yield Static(f"  {marker} {p}", id=f"prof-{p.lower()}", classes="config-group")
+                yield Static("  Filesystem", classes="config-label")
+                for f in self.FS_OPTIONS:
+                    marker = "(*)" if f == self.FS_OPTIONS[self._fs_idx] else "( )"
+                    yield Static(f"  {marker} {f}", id=f"fs-{f}", classes="config-group")
+                yield Static("  Volume Label (optional)", classes="config-label")
+                yield Input(value=self.config.get("label", ""), id="label-input", classes="config-group")
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
                 Button(" Continue ", id="continue-btn"),
                 classes="btn-row",
             )
-        yield Static("  Esc Back   Enter Continue", classes="footer")
+            yield Static("  Esc Back   Enter Continue", id="footer")
 
     def on_mount(self) -> None:
         try:
@@ -550,26 +555,26 @@ class FinalConfirmationScreen(Screen):
         self.config = config
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  Confirm", classes="header")
-        with VerticalScroll():
-            yield Static("  Validation Summary", classes="group-title")
-            yield Static(f"  Drive:  {self.disk.model}")
-            yield Static(f"  Serial: {self.disk.serial}")
-            yield Static(f"  Capacity: {self.disk.capacity_human}")
-            yield Static("")
-            yield Static(f"  Profile:     {self.config['profile'].title()}")
-            yield Static(f"  Filesystem:  {self.config['filesystem']}")
-            yield Static(f"  Label:       {self.config.get('label', '(none)') or '(none)'}")
-            yield Static("")
-            yield Static("  !  ALL EXISTING DATA WILL BE", classes="warning")
-            yield Static("  !  PERMANENTLY DESTROYED.", classes="warning")
-            yield Static("", classes="config-group")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Confirm", id="header")
+            with VerticalScroll(id="body"):
+                yield Static("  Validation Summary", classes="group-title")
+                yield Static(f"  Drive:  {self.disk.model}")
+                yield Static(f"  Serial: {self.disk.serial}")
+                yield Static(f"  Capacity: {self.disk.capacity_human}")
+                yield Static("")
+                yield Static(f"  Profile:     {self.config['profile'].title()}")
+                yield Static(f"  Filesystem:  {self.config['filesystem']}")
+                yield Static(f"  Label:       {self.config.get('label', '(none)') or '(none)'}")
+                yield Static("")
+                yield Static("  !  ALL EXISTING DATA WILL BE", classes="warning")
+                yield Static("  !  PERMANENTLY DESTROYED.", classes="warning")
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
                 Button(" Start Validation ", id="start-btn"),
                 classes="btn-row",
             )
-        yield Static("  Esc Back   Enter Start", classes="footer")
+            yield Static("  Esc Back   Enter Start", id="footer")
 
     def on_key(self, event) -> None:
         if event.key == "escape":
@@ -632,21 +637,23 @@ class ExecutionScreen(Screen):
 
     def compose(self) -> ComposeResult:
         mode = "  [TEST MODE]" if self.app.test_mode else ""
-        yield Static(f"OldButGold v{__version__}  |  Validating {self.disk.device}{mode}", classes="header")
-        with Horizontal():
-            with VerticalScroll(classes="steps-col"):
-                yield Static("  Pipeline", classes="group-title")
-                for s in self.PIPELINE_STAGES:
-                    w = Static(f"  [ ]  {s}", classes="step-pending")
-                    self._step_widgets[s] = w
-                    yield w
-            with VerticalScroll(classes="output-col"):
-                yield Static("  Progress", classes="group-title")
-                yield ProgressBar(total=100, id="bb-progress", show_eta=False)
-                yield Static("", id="progress-info", classes="progress-info")
-                yield Static("  Output", classes="group-title")
-                yield Static("", id="live-output")
-        yield Static("  [C] Cancel  Elapsed: 00:00:00", classes="footer")
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Validating {self.disk.device}{mode}", id="header")
+            with VerticalScroll(id="body"):
+                with Horizontal():
+                    with VerticalScroll(classes="steps-col"):
+                        yield Static("  Pipeline", classes="group-title")
+                        for s in self.PIPELINE_STAGES:
+                            w = Static(f"  [ ]  {s}", classes="step-pending")
+                            self._step_widgets[s] = w
+                            yield w
+                    with VerticalScroll(classes="output-col"):
+                        yield Static("  Progress", classes="group-title")
+                        yield ProgressBar(total=100, id="bb-progress", show_eta=False)
+                        yield Static("", id="progress-info", classes="progress-info")
+                        yield Static("  Output", classes="group-title")
+                        yield Static("", id="live-output")
+            yield Static("  [C] Cancel  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._tick)
@@ -671,7 +678,7 @@ class ExecutionScreen(Screen):
         if self._bb_speed > 0:
             parts.append(f"  {self._bb_speed:.1f} MB/s")
         try:
-            self.query_one(".footer").update(" |".join(parts))
+            self.query_one("#footer").update(" |".join(parts))
         except Exception:
             pass
 
@@ -787,49 +794,49 @@ class CompleteScreen(Screen):
         self._report_exported = False
 
     def compose(self) -> ComposeResult:
-        yield Static(f"OldButGold v{__version__}  |  Validation Complete", classes="header")
-        with VerticalScroll():
-            if self.result:
-                r = self.result
-                cls_val = r.classification.classification.value
-                yield Static(f"  {cls_val}", classes=cls_val.lower())
-                yield Static("")
-                yield Static(f"  {self.disk.model}")
-                yield Static(f"  {self.disk.serial}  |  {self.disk.capacity_human}")
-                yield Static("")
-                sb = r.snapshot.smart_before
-                sa = r.snapshot.smart_after
-                yield Static(f"  Filesystem:    {self.config['filesystem']}")
-                yield Static(f"  Label:         {self.config['label'] or '(none)'}")
-                yield Static(f"  SMART Before:  {sb.overall_health if sb else 'N/A'}")
-                yield Static(f"  SMART After:   {sa.overall_health if sa else 'N/A'}")
-                yield Static(f"  Bad Blocks:    {r.snapshot.badblocks_count}")
-                yield Static("")
-                for reason in r.classification.reasons:
-                    yield Static(f"  - {reason}")
-                yield Static("")
-                dur = r.total_duration_seconds
-                h = int(dur // 3600)
-                m = int((dur % 3600) // 60)
-                s = int(dur % 60)
-                ds = f"{h}h {m:02d}m {s:02d}s" if h else (f"{m}m {s:02d}s" if m else f"{s}s")
-                yield Static(f"  Duration: {ds}")
-                yield Static("")
-                if r.report_path:
-                    yield Static(f"  Report: {r.report_path}")
-                    self._report_exported = True
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Validation Complete", id="header")
+            with VerticalScroll(id="body"):
+                if self.result:
+                    r = self.result
+                    cls_val = r.classification.classification.value
+                    yield Static(f"  {cls_val}", classes=cls_val.lower())
+                    yield Static("")
+                    yield Static(f"  {self.disk.model}")
+                    yield Static(f"  {self.disk.serial}  |  {self.disk.capacity_human}")
+                    yield Static("")
+                    sb = r.snapshot.smart_before
+                    sa = r.snapshot.smart_after
+                    yield Static(f"  Filesystem:    {self.config['filesystem']}")
+                    yield Static(f"  Label:         {self.config['label'] or '(none)'}")
+                    yield Static(f"  SMART Before:  {sb.overall_health if sb else 'N/A'}")
+                    yield Static(f"  SMART After:   {sa.overall_health if sa else 'N/A'}")
+                    yield Static(f"  Bad Blocks:    {r.snapshot.badblocks_count}")
+                    yield Static("")
+                    for reason in r.classification.reasons:
+                        yield Static(f"  - {reason}")
+                    yield Static("")
+                    dur = r.total_duration_seconds
+                    h = int(dur // 3600)
+                    m = int((dur % 3600) // 60)
+                    s = int(dur % 60)
+                    ds = f"{h}h {m:02d}m {s:02d}s" if h else (f"{m}m {s:02d}s" if m else f"{s}s")
+                    yield Static(f"  Duration: {ds}")
+                    yield Static("")
+                    if r.report_path:
+                        yield Static(f"  Report: {r.report_path}")
+                        self._report_exported = True
+                    else:
+                        yield Static("  No report generated.")
                 else:
-                    yield Static("  No report generated.")
-            else:
-                yield Static("  Pipeline failed or was cancelled.", classes="failed")
-            yield Static("", classes="config-group")
+                    yield Static("  Pipeline failed or was cancelled.", classes="failed")
             yield Horizontal(
                 Button(" Export Report ", id="export-btn"),
                 Button(" Validate Another Drive ", id="another-btn"),
                 Button(" Quit ", id="quit-btn"),
                 classes="btn-row",
             )
-        yield Static("  Enter Another   Q Quit", classes="footer")
+            yield Static("  Enter Another   Q Quit", id="footer")
 
     def on_key(self, event) -> None:
         if event.key == "enter":
@@ -852,15 +859,15 @@ class CompleteScreen(Screen):
             try:
                 subprocess.Popen(["xdg-open", report_dir],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.query_one(".footer").update(f"  Opening report folder...  Q Quit")
+                self.query_one("#footer").update(f"  Opening report folder...  Q Quit")
             except Exception:
                 try:
-                    self.query_one(".footer").update(f"  Report: {self.result.report_path}  Q Quit")
+                    self.query_one("#footer").update(f"  Report: {self.result.report_path}  Q Quit")
                 except Exception:
                     pass
         else:
             try:
-                self.query_one(".footer").update("  No report to export.  Q Quit")
+                self.query_one("#footer").update("  No report to export.  Q Quit")
             except Exception:
                 pass
 
