@@ -35,7 +35,8 @@ def main() -> None:
                 term = shutil.which(term_cmd)
                 if term:
                     logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
-                    os.execvp(term, [term, "--", "pkexec", binary] + sys.argv[1:])
+                    cmd = "pkexec " + binary + "".join(f" {a}" for a in sys.argv[1:])
+                    os.execvp(term, [term, "-x", cmd])
             for term_cmd in ("kgx", "konsole", "xfce4-terminal", "lxterminal", "xterm", "x-terminal-emulator"):
                 term = shutil.which(term_cmd)
                 if term:
