@@ -406,7 +406,8 @@ class DriveInfoScreen(Screen):
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.app.pop_screen()
+            while len(self.app.screen_stack) > 2:
+                self.app.pop_screen()
         elif event.key == "enter":
             self.app.push_screen(ValidationConfigScreen(self.disk))
 
@@ -414,7 +415,8 @@ class DriveInfoScreen(Screen):
         if event.button.id == "continue-btn":
             self.app.push_screen(ValidationConfigScreen(self.disk))
         elif event.button.id == "back-btn":
-            self.app.pop_screen()
+            while len(self.app.screen_stack) > 2:
+                self.app.pop_screen()
 
     @work(thread=True)
     def _fetch_smart(self) -> None:
