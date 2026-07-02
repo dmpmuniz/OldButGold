@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 _LOCK_DIR = Path("/tmp") / "oldbutgold-locks"
+_fds: dict[str, int] = {}
 
 
 def _lock_path(device: str) -> Path:
@@ -18,12 +19,20 @@ def acquire_lock(device: str) -> bool:
     try:
         fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _fds[device] = fd
         return True
     except (OSError, IOError):
         return False
 
 
 def release_lock(device: str) -> None:
+    fd = _fds.pop(device, None)
+    if fd is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        except OSError:
+            pass
     path = _lock_path(device)
     try:
         if path.exists():

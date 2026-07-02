@@ -31,6 +31,7 @@ def _resolve_tool(name: str) -> str:
         tp = bundle / "tools" / name
         if tp.exists() and os.access(tp, os.X_OK):
             return str(tp)
+        raise FileNotFoundError(f"Bundled tool not found: {name}")
     which = shutil.which(name)
     if which:
         return which

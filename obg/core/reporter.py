@@ -35,7 +35,7 @@ def _generate_markdown(data: ReportData) -> str:
     smart_after = data.snapshot.smart_after
     delta = data.snapshot.smart_delta
     cls = data.classification
-    profile = "Recommended"
+    profile = data.profile.title()
     total = _format_duration(data.total_duration_seconds)
 
     lines = [
@@ -65,7 +65,7 @@ def _generate_markdown(data: ReportData) -> str:
         f"| Capacity           | {info.capacity_human} ({info.capacity_bytes:,} B) |",
         f"| Logical Sector     | {info.logical_sector} B |",
         f"| Physical Sector    | {info.physical_sector} B |",
-        f"| Interface          | {info.transport:<30s} |",
+        f"| Interface          | {info.interface:<30s} |",
         f"| Transport          | {info.transport:<30s} |",
         "",
         "---",

@@ -93,7 +93,9 @@ def test_filter_boot_disk(mock_run):
         mock_open.return_value.__exit__ = MagicMock(return_value=False)
         mock_open.return_value.readlines.return_value = ["/dev/sda1 / ext4 defaults 0 0\n"]
         disks = list_disks()
-    assert len(disks) == 0
+    assert len(disks) == 1
+    assert disks[0].is_boot_disk is True
+    assert disks[0].is_supported is False
 
 
 @patch("obg.core.detector.run")

@@ -17,8 +17,7 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
         failed_reasons.append(f"Pending sectors: {smart_after.pending_sectors}")
     if smart_after and smart_after.uncorrectable_sectors > 0:
         failed_reasons.append(f"Uncorrectable sectors: {smart_after.uncorrectable_sectors}")
-    if bb > 0:
-        failed_reasons.append(f"Bad blocks found: {bb}")
+    # ponytail: bad blocks are Bronze, not Failed (spec §6)
 
     if failed_reasons:
         return ClassificationResult(
@@ -73,11 +72,15 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
         )
 
     # BRONZE — validation completed but defects detected
-    bronze_reasons = ["SMART health PASSED"]
+    bronze_reasons = []
+    if smart_after and smart_after.overall_health == "PASSED":
+        bronze_reasons.append("SMART health PASSED")
     if smart_after and smart_after.reallocated_sectors > 5:
         bronze_reasons.append(f"Significant wear: {smart_after.reallocated_sectors} reallocated sectors")
     if delta and delta.reallocated > 0:
         bronze_reasons.append(f"New reallocated sectors during test: +{delta.reallocated}")
+    if bb > 0:
+        bronze_reasons.append(f"Bad blocks found: {bb}")
 
     return ClassificationResult(
         classification=Classification.BRONZE,

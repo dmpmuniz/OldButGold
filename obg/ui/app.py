@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 import subprocess
 import sys
 import time
@@ -309,14 +310,11 @@ class SessionDecisionScreen(Screen):
         if event.key == "escape":
             self.app.pop_screen()
         elif event.key == "enter":
-            complete_session(self.disk)
-            self.app.push_screen(SmartTestScreen(self.disk))
+            self.app.push_screen(SmartTestScreen(self.disk, resume=True))
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "recover-btn":
-            # ponytail: recovery not implemented — same as restart
-            complete_session(self.disk)
-            self.app.push_screen(SmartTestScreen(self.disk))
+            self.app.push_screen(SmartTestScreen(self.disk, resume=True))
         elif event.button.id == "restart-btn":
             complete_session(self.disk)
             self.app.push_screen(SmartTestScreen(self.disk))
@@ -327,9 +325,10 @@ class SessionDecisionScreen(Screen):
 
 
 class SmartTestScreen(Screen):
-    def __init__(self, disk: DiskInfo) -> None:
+    def __init__(self, disk: DiskInfo, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
+        self.resume = resume
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
@@ -366,14 +365,15 @@ class SmartTestScreen(Screen):
             pass
 
     def _done(self, smart_data) -> None:
-        self.app.push_screen(DriveInfoScreen(self.disk, smart_data))
+        self.app.push_screen(DriveInfoScreen(self.disk, smart_data, resume=self.resume))
 
 
 class DriveInfoScreen(Screen):
-    def __init__(self, disk: DiskInfo, smart_data=None) -> None:
+    def __init__(self, disk: DiskInfo, smart_data=None, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
         self._smart_data = smart_data
+        self.resume = resume
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
@@ -419,11 +419,11 @@ class DriveInfoScreen(Screen):
             while len(self.app.screen_stack) > 2:
                 self.app.pop_screen()
         elif event.key == "enter":
-            self.app.push_screen(ValidationConfigScreen(self.disk))
+            self.app.push_screen(ValidationConfigScreen(self.disk, resume=self.resume))
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "continue-btn":
-            self.app.push_screen(ValidationConfigScreen(self.disk))
+            self.app.push_screen(ValidationConfigScreen(self.disk, resume=self.resume))
         elif event.button.id == "back-btn":
             while len(self.app.screen_stack) > 2:
                 self.app.pop_screen()
@@ -457,9 +457,10 @@ class DriveInfoScreen(Screen):
 class ValidationConfigScreen(Screen):
     BINDINGS = [("escape", "go_back")]
 
-    def __init__(self, disk: DiskInfo) -> None:
+    def __init__(self, disk: DiskInfo, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
+        self.resume = resume
         self.config = load_config()
         self.FS_OPTIONS = ["ext4", "ntfs", "exfat", "fat32"]
         self.PROFILES = ["Recommended", "Extended"]
@@ -559,14 +560,15 @@ class ValidationConfigScreen(Screen):
         label = self.query_one("#label-input").value.strip()
         self.config["label"] = label
         save_config(self.config)
-        self.app.push_screen(FinalConfirmationScreen(self.disk, self.config))
+        self.app.push_screen(FinalConfirmationScreen(self.disk, self.config, resume=self.resume))
 
 
 class FinalConfirmationScreen(Screen):
-    def __init__(self, disk: DiskInfo, config: dict) -> None:
+    def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
         self.config = config
+        self.resume = resume
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
@@ -603,14 +605,15 @@ class FinalConfirmationScreen(Screen):
             self._start()
 
     def _start(self) -> None:
-        self.app.push_screen(ExecutionScreen(self.disk, self.config))
+        self.app.push_screen(ExecutionScreen(self.disk, self.config, resume=self.resume))
 
 
 class ExecutionScreen(Screen):
-    def __init__(self, disk: DiskInfo, config: dict) -> None:
+    def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
         self.config = config
+        self.resume = resume
         self._step_widgets: dict[str, Static] = {}
         self._output_lines: list[str] = []
         self._start_time = time.monotonic()
@@ -719,7 +722,6 @@ class ExecutionScreen(Screen):
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
-        import re
         self._output_lines.append(line)
         if len(self._output_lines) > 200:
             self._output_lines = self._output_lines[-200:]
@@ -779,10 +781,12 @@ class ExecutionScreen(Screen):
                 disk_info=self.disk,
                 filesystem=self.config["filesystem"],
                 label=self.config["label"],
+                profile=self.config["profile"],
                 on_step=self._on_step,
                 on_output=self._on_output,
                 is_cancelled=lambda: self._cancelled,
                 test_mode=self.app.test_mode,
+                resume=self.resume,
             )
             self.app.call_from_thread(self._complete, result)
         except Exception as e:

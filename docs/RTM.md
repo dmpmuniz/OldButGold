@@ -27,7 +27,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 1 |
 | **Acceptance Test** | A-001, A-002, A-003 |
 | **Dependencies** | RTM-011 (Tool Verification) |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Initialize runtime
@@ -46,7 +46,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 2 |
 | **Acceptance Test** | B-001, B-002, B-003, B-004 |
 | **Dependencies** | RTM-011 (Tool Verification) |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Enumerate every supported block device
@@ -65,7 +65,7 @@
 | **Source** | MASTER_SPECIFICATION §5 |
 | **Acceptance Test** | B-003 |
 | **Dependencies** | RTM-002 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Auto-protect system drive, boot device, Linux installation drive, unsupported removable devices, read-only devices
@@ -82,7 +82,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 3 |
 | **Acceptance Test** | C-001, C-002 |
 | **Dependencies** | RTM-002, RTM-016 (Session System) |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Determine whether selected drive has interrupted validation session
@@ -99,7 +99,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 4 |
 | **Acceptance Test** | C-003, C-004, C-005 |
 | **Dependencies** | RTM-004 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Offer: Recover Validation, Restart Validation, View Session Details, Return
@@ -115,7 +115,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 5, DESIGN_PRINCIPLES §Principle 10 |
 | **Acceptance Test** | B-004, C-003, C-005 |
 | **Dependencies** | RTM-002 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Uniquely identify HDD using hardware fingerprint
@@ -132,7 +132,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 6 |
 | **Acceptance Test** | D-001 |
 | **Dependencies** | RTM-006 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Collect initial SMART snapshot before any diagnostic operation
@@ -148,7 +148,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 7 |
 | **Acceptance Test** | D-002, D-003 |
 | **Dependencies** | RTM-007 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Execute SMART Short Self-Test
@@ -165,7 +165,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 8 |
 | **Acceptance Test** | E-001, E-002, E-003 |
 | **Dependencies** | RTM-008 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Validation Profile: Recommended, Extended
@@ -183,7 +183,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 9 |
 | **Acceptance Test** | F-001, F-002, F-003 |
 | **Dependencies** | RTM-009 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Display: selected drive, validation profile, filesystem, volume label
@@ -200,7 +200,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 10 |
 | **Acceptance Test** | G-001, G-002, G-003, G-004 |
 | **Dependencies** | RTM-010, RTM-015 (Profiles) |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Execute Badblocks according to selected validation profile
@@ -218,7 +218,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 11 |
 | **Acceptance Test** | D-004, D-005 |
 | **Dependencies** | RTM-011 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Collect new SMART snapshot immediately after Badblocks completes
@@ -236,7 +236,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 12 |
 | **Acceptance Test** | H-001, H-002, H-003 |
 | **Dependencies** | RTM-011 (must complete successfully) |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Execute only if validation completes successfully
@@ -256,7 +256,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 13, REPORT_SPECIFICATION |
 | **Acceptance Test** | I-001, I-002, I-003 |
 | **Dependencies** | RTM-013, RTM-012 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Generate Markdown report only
@@ -275,7 +275,7 @@
 | **Source** | MASTER_SPECIFICATION §7, PRODUCT_VISION §11 |
 | **Acceptance Test** | E-001, G-001, G-002 |
 | **Dependencies** | None |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Exactly two profiles: Recommended, Extended
@@ -292,7 +292,7 @@
 | **Source** | MASTER_SPECIFICATION §8, SESSION_RECOVERY_SPECIFICATION |
 | **Acceptance Test** | C-001 through C-005, L-001, L-002 |
 | **Dependencies** | RTM-006 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Each HDD owns one independent session
@@ -313,7 +313,7 @@
 | **Source** | MASTER_SPECIFICATION §9, SESSION_RECOVERY_SPECIFICATION §6-8 |
 | **Acceptance Test** | C-003, C-005, L-001, L-002 |
 | **Dependencies** | RTM-016 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Resume only after fingerprint validation, session integrity verification, compatibility verification
@@ -332,7 +332,7 @@
 | **Source** | MASTER_SPECIFICATION §13 |
 | **Acceptance Test** | Implicit in all error-path tests |
 | **Dependencies** | None |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Stop affected workflow on failure
@@ -351,7 +351,7 @@
 | **Source** | MASTER_SPECIFICATION §12, UI_GUIDELINES §13-15 |
 | **Acceptance Test** | G-003, G-004, K-004 |
 | **Dependencies** | RTM-011 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Display: current stage, operation, completed stages, failed stages, overall progress, stage progress, estimated remaining time, elapsed time, throughput, processed data
@@ -368,7 +368,7 @@
 | **Source** | CLASSIFICATION_SPECIFICATION |
 | **Acceptance Test** | Implicit in report tests |
 | **Dependencies** | RTM-012, RTM-011, RTM-013 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Four levels: Gold, Silver, Bronze, Failed
@@ -389,7 +389,7 @@
 | **Source** | TOOLCHAIN_SPECIFICATION, ENGINEERING_GUIDELINES §7-8 |
 | **Acceptance Test** | M-001, M-002, M-003 |
 | **Dependencies** | None |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Self-contained: no host package installation required
@@ -411,7 +411,7 @@
 | **Source** | ENGINEERING_GUIDELINES §10 |
 | **Acceptance Test** | A-001 |
 | **Dependencies** | RTM-021 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Request administrative privileges only once via pkexec
@@ -428,7 +428,7 @@
 | **Source** | UI_GUIDELINES (all sections) |
 | **Acceptance Test** | K-001 through K-005 |
 | **Dependencies** | RTM-001 through RTM-014 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Simple, deterministic, keyboard-first, information-oriented, distraction-free
@@ -449,7 +449,7 @@
 | **Source** | ENGINEERING_GUIDELINES §21 |
 | **Acceptance Test** | All workflow tests |
 | **Dependencies** | RTM-001 through RTM-014 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Sequence stages, enforce order, validate transitions, prevent invalid paths
@@ -466,7 +466,7 @@
 | **Source** | BUILD_RELEASE_SPECIFICATION |
 | **Acceptance Test** | Release verification |
 | **Dependencies** | RTM-021 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Single distributable directory
@@ -486,7 +486,7 @@
 | **Source** | ENGINEERING_GUIDELINES §18, MASTER_SPECIFICATION §16 |
 | **Acceptance Test** | Implicit |
 | **Dependencies** | None |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Diagnostic logging for troubleshooting
@@ -504,7 +504,7 @@
 | **Source** | ENGINEERING_GUIDELINES §14 |
 | **Acceptance Test** | L-003, L-004 |
 | **Dependencies** | RTM-006 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Acquire exclusive lock for selected HDD before validation
@@ -521,7 +521,7 @@
 | **Source** | MASTER_SPECIFICATION §6 Stage 14, DESIGN_PRINCIPLES §13 |
 | **Acceptance Test** | J-001, J-002, J-003 |
 | **Dependencies** | RTM-014 |
-| **Status** | Not Started |
+| **Status** | Implemented |
 
 **Requirements:**
 - Remove checkpoints, temporary files, session metadata on successful completion
@@ -536,9 +536,9 @@
 | Category | Count |
 |----------|-------|
 | Total Requirements | 28 |
-| Not Started | 28 |
+| Not Started | 0 |
 | In Progress | 0 |
-| Implemented | 0 |
+| Implemented | 28 |
 | Reviewed | 0 |
 | Validated | 0 |
 | Blocked | 0 |

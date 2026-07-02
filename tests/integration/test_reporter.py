@@ -15,7 +15,7 @@ def _make_info():
     return DiskInfo(
         device="/dev/sdb", model="WD Elements 25A3", serial="WX41A19TEST",
         firmware="1028", capacity_bytes=2000398934016, capacity_human="2.0 TB",
-        transport="usb-uas", logical_sector=512, physical_sector=4096,
+        interface="usb", transport="usb-uas", logical_sector=512, physical_sector=4096,
         min_io=4096, optimal_io=33553920, alignment_offset=0, rpm=5400,
         smart_supported=True, uas_enabled=True,
         current_fs="ntfs", partition_table="gpt",
@@ -60,6 +60,13 @@ def test_classify_bronze():
     assert result.classification == Classification.BRONZE
 
 
+def test_classify_bronze_badblocks():
+    snap = _make_snapshot(_make_smart(), _make_smart(), bb=5)
+    result = classify(snap)
+    assert result.classification == Classification.BRONZE
+    assert any("Bad blocks found: 5" in r for r in result.reasons)
+
+
 def test_classify_failed_smart_fail():
     snap = _make_snapshot(_make_smart(), _make_smart(health="FAILED"))
     result = classify(snap)
@@ -82,7 +89,7 @@ def test_generate_report_creates_file():
     data = ReportData(
         obg_version="1.0.0", generated_at=now, snapshot=snap,
         steps=steps, classification=classification,
-        filesystem="ext4", label="data", block_size=65536,
+        filesystem="ext4", label="data", profile="recommended", block_size=65536,
         total_duration_seconds=100.0, success=True,
     )
     report_path = generate_report(data)

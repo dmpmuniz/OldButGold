@@ -13,6 +13,8 @@ from obg.core.partitioner import create_gpt, create_partition
 from obg.core.formatter import format_filesystem
 from obg.core.classifier import classify
 from obg.core.reporter import generate_report
+from obg.core.lock import acquire_lock, release_lock
+from obg.core.session import create_session, find_session, update_checkpoint, complete_session
 from obg.utils import logger
 
 
@@ -37,10 +39,12 @@ def run_pipeline(
     disk_info: DiskInfo,
     filesystem: str,
     label: str,
+    profile: str,
     on_step: Callable[[str, StepStatus], None],
     on_output: Callable[[str], None],
     is_cancelled: Callable[[], bool],
     test_mode: bool = False,
+    resume: bool = False,
 ) -> OperationResult:
     start_time = time.monotonic()
     step_results: list[StepResult] = []
@@ -52,40 +56,35 @@ def run_pipeline(
     partition = None
     disconnected = False
 
-    def _run_step(name: str) -> StepResult:
-        on_step(name, StepStatus.RUNNING)
-        return StepResult(name=name, status=StepStatus.RUNNING, started_at=datetime.now(), duration_seconds=0)
-
-    def _finish_step(sr: StepResult, status: StepStatus, error: str | None = None, output: str = "") -> None:
-        sr.status = status
-        sr.duration_seconds = (datetime.now() - sr.started_at).total_seconds()
-        sr.error = error
-        sr.output = output
-        on_step(sr.name, status)
-
-    def _skip_remaining(reason: str) -> None:
-        for name in STEPS:
-            if any(s.name == name for s in step_results):
-                continue
-            sr = _run_step(name)
-            _finish_step(sr, StepStatus.SKIPPED)
-            step_results.append(sr)
-
-    def _cancel_remaining() -> None:
-        for name in STEPS:
-            if any(s.name == name for s in step_results):
-                continue
-            sr = _run_step(name)
-            _finish_step(sr, StepStatus.CANCELLED)
-            step_results.append(sr)
+    if not acquire_lock(device):
+        raise RuntimeError(f"Cannot acquire exclusive lock for {device}")
 
     try:
+        def _run_step(name: str) -> StepResult:
+            on_step(name, StepStatus.RUNNING)
+            return StepResult(name=name, status=StepStatus.RUNNING, started_at=datetime.now(), duration_seconds=0)
+
+        def _finish_step(sr: StepResult, status: StepStatus, error: str | None = None, output: str = "") -> None:
+            sr.status = status
+            sr.duration_seconds = (datetime.now() - sr.started_at).total_seconds()
+            sr.error = error
+            sr.output = output
+            on_step(sr.name, status)
+
+        def _finish_remaining(status: StepStatus) -> None:
+            for name in STEPS:
+                if any(s.name == name for s in step_results):
+                    continue
+                sr = _run_step(name)
+                _finish_step(sr, status)
+                step_results.append(sr)
+
         # Step 1: Drive Identification
         sr = _run_step("Drive Identification")
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             if not verify_identity(device, disk_info.model, disk_info.serial):
@@ -95,7 +94,7 @@ def run_pipeline(
             _finish_step(sr, StepStatus.OK)
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
-            _skip_remaining(str(e))
+            _finish_remaining(StepStatus.SKIPPED)
             return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
 
         # Step 2: Initial SMART Collection
@@ -103,7 +102,7 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             smart_before = read_smart(device)
@@ -116,7 +115,7 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             ok = run_short_test(device)
@@ -129,12 +128,10 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
-            smart_collected = read_smart(device)
-            if smart_collected:
-                smart_before = smart_collected
+            read_smart(device)
             _finish_step(sr, StepStatus.OK)
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
@@ -144,14 +141,26 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
-            bb_count = run_badblocks(device, on_output, test_mode=test_mode)
+            resume_offset = 0
+            if resume:
+                existing = find_session(disk_info)
+                if existing:
+                    resume_offset = existing.get("badblocks_offset", 0)
+            if resume_offset == 0:
+                create_session(disk_info)
+            def _on_checkpoint(offset: float) -> None:
+                update_checkpoint(disk_info, offset)
+            bb_count = run_badblocks(
+                device, on_output, on_checkpoint=_on_checkpoint,
+                test_mode=test_mode, profile=profile, resume_offset=resume_offset,
+            )
             _finish_step(sr, StepStatus.OK, output=f"{bb_count} bad blocks")
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
-            _skip_remaining(str(e))
+            _finish_remaining(StepStatus.SKIPPED)
             return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
 
         # Step 6: Final SMART Collection
@@ -159,7 +168,7 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             smart_after = read_smart(device)
@@ -172,7 +181,7 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             if smart_before and smart_after:
@@ -193,14 +202,14 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             create_gpt(device)
             _finish_step(sr, StepStatus.OK)
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
-            _skip_remaining(str(e))
+            _finish_remaining(StepStatus.SKIPPED)
             return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
 
         # Step 9: Create Partition
@@ -208,14 +217,14 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             partition = create_partition(device)
             _finish_step(sr, StepStatus.OK, output=partition)
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
-            _skip_remaining(str(e))
+            _finish_remaining(StepStatus.SKIPPED)
             return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
 
         # Step 10: Format Filesystem
@@ -223,14 +232,14 @@ def run_pipeline(
         step_results.append(sr)
         if is_cancelled() or disconnected:
             _finish_step(sr, StepStatus.CANCELLED)
-            _cancel_remaining()
+            _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
             format_filesystem(partition, filesystem, label, on_output)
             _finish_step(sr, StepStatus.OK)
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
-            _skip_remaining(str(e))
+            _finish_remaining(StepStatus.SKIPPED)
             return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
 
         # Step 11: Generate Report
@@ -247,7 +256,7 @@ def run_pipeline(
                 obg_version=__version__, generated_at=datetime.now(),
                 snapshot=snapshot, steps=step_results,
                 classification=classification, filesystem=filesystem,
-                label=label, block_size=65536,
+                label=label, profile=profile, block_size=65536,
                 total_duration_seconds=time.monotonic() - start_time,
                 success=True,
             )
@@ -259,13 +268,16 @@ def run_pipeline(
         # Step 12: Session Cleanup
         sr = _run_step("Session Cleanup")
         step_results.append(sr)
+        if not resume:
+            try:
+                complete_session(disk_info)
+            except Exception:
+                pass
         _finish_step(sr, StepStatus.OK)
 
-        dur = time.monotonic() - start_time
         return _build_result(True, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-
     finally:
-        pass
+        release_lock(device)
 
 
 def _build_result(

@@ -103,12 +103,9 @@ def list_disks() -> list[DiskInfo]:
         boot_disk = boot_device is not None and boot_device.startswith(f"/dev/{name}")
         mounted = _is_disk_mounted(name, mounts)
 
-        # Skip boot disk entirely (protected device)
-        if boot_disk:
-            continue
-
         model = dev.get("model") or "Unknown"
         serial = dev.get("serial") or "Unknown"
+        interface = dev.get("tran") or "unknown"
         transport = _detect_transport(name, dev.get("tran"))
 
         disk_info = DiskInfo(
@@ -118,6 +115,7 @@ def list_disks() -> list[DiskInfo]:
             firmware="Unknown",
             capacity_bytes=size,
             capacity_human=_parse_capacity_human(size),
+            interface=interface,
             transport=transport,
             logical_sector=dev.get("log-sec", 512),
             physical_sector=dev.get("phy-sec", 512),
@@ -133,7 +131,7 @@ def list_disks() -> list[DiskInfo]:
             is_boot_disk=boot_disk,
             temperature=None,
             power_on_hours=None,
-            is_supported=not is_ssd and not mounted,
+            is_supported=not is_ssd and not mounted and not boot_disk,
         )
         disks.append(disk_info)
 

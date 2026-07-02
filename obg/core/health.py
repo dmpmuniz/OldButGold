@@ -77,13 +77,6 @@ def run_short_test(device: str) -> bool:
     return poll_smart_test(device, timeout_seconds=300, on_output=None)
 
 
-def run_long_test(device: str) -> bool:
-    result = run(["smartctl", "-t", "long", device])
-    if result.returncode not in (0, 2):
-        return False
-    return poll_smart_test(device, timeout_seconds=36000, on_output=None)
-
-
 def poll_smart_test(
     device: str,
     timeout_seconds: int,

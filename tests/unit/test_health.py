@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from obg.core.health import read_smart, run_short_test, run_long_test, poll_smart_test
+from obg.core.health import read_smart, run_short_test, poll_smart_test
 
 MOCK_SMARTCTL_OUTPUT = """smartctl 7.1 2019-10-24 r5009
 
@@ -73,22 +73,6 @@ def test_run_short_test_success():
     with patch("obg.core.health.run", side_effect=[start_result, poll_result]):
         with patch("obg.core.health.time.sleep"):
             result = run_short_test("/dev/sdb")
-
-    assert result is True
-
-
-def test_run_long_test_success():
-    start_result = MagicMock()
-    start_result.returncode = 0
-    start_result.stdout = "Test has begun"
-
-    poll_result = MagicMock()
-    poll_result.returncode = 0
-    poll_result.stdout = "Self-test execution status:      (   0)"
-
-    with patch("obg.core.health.run", side_effect=[start_result, poll_result]):
-        with patch("obg.core.health.time.sleep"):
-            result = run_long_test("/dev/sdb")
 
     assert result is True
 

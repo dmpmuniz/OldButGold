@@ -15,6 +15,7 @@ class ReportData:
     classification: ClassificationResult
     filesystem: str
     label: str
+    profile: str
     block_size: int
     total_duration_seconds: float
     success: bool = True

@@ -10,7 +10,7 @@ def test_disk_info_creation():
     info = DiskInfo(
         device="/dev/sdb", model="WD Elements", serial="WX123", firmware="1.0",
         capacity_bytes=2000398934016, capacity_human="2.0 TB",
-        transport="usb-uas", logical_sector=512, physical_sector=4096,
+        interface="usb", transport="usb-uas", logical_sector=512, physical_sector=4096,
         min_io=4096, optimal_io=33553920, alignment_offset=0, rpm=5400,
         smart_supported=True, uas_enabled=True,
         current_fs="ntfs", partition_table="gpt",
@@ -54,7 +54,7 @@ def test_operation_result_creation():
     info = DiskInfo(
         device="/dev/sdb", model="Test", serial="T123", firmware="1.0",
         capacity_bytes=1000000000, capacity_human="1 GB",
-        transport="sata", logical_sector=512, physical_sector=512,
+        interface="sata", transport="sata", logical_sector=512, physical_sector=512,
         min_io=512, optimal_io=0, alignment_offset=0, rpm=7200,
         smart_supported=True, uas_enabled=False,
         current_fs=None, partition_table=None,

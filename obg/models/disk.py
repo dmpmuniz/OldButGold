@@ -11,6 +11,7 @@ class DiskInfo:
     firmware: str
     capacity_bytes: int
     capacity_human: str
+    interface: str
     transport: str
     logical_sector: int
     physical_sector: int
