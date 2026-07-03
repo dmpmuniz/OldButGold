@@ -129,7 +129,7 @@ class StartupScreen(Screen):
                 Button(" Exit ", id="exit-btn", classes="startup-btn"),
                 classes="btn-row",
             )
-            yield Static("  Initializing...  < > Navigate  Enter Select  Esc Exit", id="footer")
+            yield Static("  Initializing, please wait...", id="footer")
 
     def on_mount(self) -> None:
         self._init()
@@ -163,7 +163,7 @@ class StartupScreen(Screen):
         try:
             self.query_one("#init-status").update(f"  Detected {len(disks)} drive(s). Ready.")
             self.query_one("#continue-btn").disabled = False
-            self.query_one("#footer").update("  Arrows Navigate  Enter Select  Esc Exit")
+            self.query_one("#footer").update("  \u2190/\u2192 Navigate  Enter Select  Esc Exit")
         except Exception:
             pass
 
@@ -194,7 +194,7 @@ class DriveSelectionScreen(Screen):
                 Button(" Quit ", id="quit-btn"),
                 classes="btn-row",
             )
-            yield Static("  ^/v Select   Enter Confirm   R Refresh   Esc Back", id="footer")
+            yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", id="footer")
 
     def on_mount(self) -> None:
         self._refresh()
@@ -655,7 +655,7 @@ class ExecutionScreen(Screen):
     def compose(self) -> ComposeResult:
         mode = "  [TEST MODE]" if self.app.test_mode else ""
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Validating {self.disk.device}{mode}", id="header")
+            yield Static(f"OldButGold v{__version__}  |  Validating{mode}", id="header")
             with Container(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="steps-col"):
@@ -670,7 +670,7 @@ class ExecutionScreen(Screen):
                         yield Static("", id="progress-info", classes="progress-info")
                         yield Static("  Output", classes="group-title")
                         yield Static("", id="live-output")
-            yield Static("  [C] Cancel  Elapsed: 00:00:00", id="footer")
+            yield Static("  [C] Cancel  —  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._tick)
@@ -685,17 +685,8 @@ class ExecutionScreen(Screen):
             return
         e = int(time.monotonic() - self._start_time)
         h, m, s = e // 3600, (e % 3600) // 60, e % 60
-        parts = [f"  [C] Cancel  Elapsed: {h:02d}:{m:02d}:{s:02d}"]
-        if self._bb_operation:
-            parts.append(f"  {self._bb_operation}")
-        if self._bb_progress > 0:
-            parts.append(f"  {self._bb_progress:.1f}%")
-        if self._bb_eta:
-            parts.append(f"  ETA: {self._bb_eta}")
-        if self._bb_speed > 0:
-            parts.append(f"  {self._bb_speed:.1f} MB/s")
         try:
-            self.query_one("#footer").update(" |".join(parts))
+            self.query_one("#footer").update(f"  [C] Cancel  \u2014  Elapsed: {h:02d}:{m:02d}:{s:02d}")
         except Exception:
             pass
 
