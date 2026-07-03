@@ -34,41 +34,39 @@ OldButGold is a Python TUI application using the Textual framework. It orchestra
 └─────────────────────────────────────────────┘
 ```
 
-### Source Layout
+### Source Layout (Current)
 
 ```
-src/
-├── main.py                 # Entry point
+obg/
+├── __init__.py             # Package version
+├── __main__.py             # Entry point (privilege escalation, terminal resize)
+├── config.py               # Runtime configuration persistence (JSON)
 ├── core/
 │   ├── __init__.py
-│   ├── types.py            # Dataclasses: Device, Session, SMARTData, ValidationConfig
-│   ├── constants.py        # Paths, profiles, filesystems, classification names
-│   └── config.py           # Runtime configuration
-├── hardware/
+│   ├── detector.py         # Device discovery (lsblk, device type, transport)
+│   ├── health.py           # SMART collection, short self-test, polling
+│   ├── scanner.py          # Badblocks execution, progress parsing, checkpoints
+│   ├── partitioner.py      # sgdisk (GPT), partition creation, partprobe
+│   ├── formatter.py        # Filesystem creation (mkfs.ext4, mkfs.ntfs, etc.)
+│   ├── engine.py           # Pipeline orchestration, state machine
+│   ├── session.py          # Session create/load/save/delete, checkpoints
+│   ├── lock.py             # Device locking (fcntl flock)
+│   ├── classifier.py      # Gold/Silver/Bronze/Failed classification
+│   └── reporter.py         # Markdown report builder
+├── models/
 │   ├── __init__.py
-│   ├── discovery.py        # lsblk enumeration, device type detection
-│   ├── identification.py   # Fingerprint generation (serial, model, firmware, capacity)
-│   ├── smart.py            # smartctl initial/final/short execution + parsing
-│   ├── badblocks.py        # Badblocks execution, progress parsing
-│   └── preparation.py      # sgdisk (GPT), mkfs.*, wipefs, partprobe
-├── workflow/
-│   ├── __init__.py
-│   └── controller.py       # Pipeline state machine, stage sequencing
-├── sessions/
-│   ├── __init__.py
-│   └── manager.py          # Session create/load/save/delete, checkpoints, fingerprint verify
-├── reports/
-│   ├── __init__.py
-│   └── generator.py        # Markdown report builder
+│   ├── disk.py             # DiskInfo, SmartData, SmartDelta, DiskSnapshot
+│   ├── classification.py  # Classification enum + ClassificationResult
+│   ├── operation.py        # StepStatus, StepResult, OperationResult
+│   └── report.py           # ReportData
 ├── ui/
 │   ├── __init__.py
-│   ├── app.py              # Textual App class
-│   ├── screens.py          # Screen definitions (9 screens)
-│   └── widgets.py          # Custom widgets (pipeline display, progress)
-├── bundle/
-│   ├── __init__.py
-│   └── tools.py            # Tool path resolution, LD_LIBRARY_PATH setup, execution
-└── logging_setup.py        # Structured diagnostic logging
+│   └── app.py              # Textual App + all 9 screen classes
+└── utils/
+    ├── __init__.py
+    ├── logger.py            # Structured diagnostic logging
+    ├── runner.py            # Subprocess execution, tool resolution, LD_LIBRARY_PATH
+    └── paths.py             # Config/report directory resolution
 ```
 
 ---
@@ -91,24 +89,30 @@ main.py
         └── core/types.py, core/constants.py, core/config.py
 ```
 
-### Module Dependencies (Directed)
+### Module Dependencies (Directed) — Current
 
 | Module | Depends On |
 |--------|-----------|
-| `core/types` | (none) |
-| `core/constants` | (none) |
-| `core/config` | `core/constants` |
-| `bundle/tools` | `core/constants`, `core/config` |
-| `hardware/discovery` | `bundle/tools`, `core/types` |
-| `hardware/identification` | `bundle/tools`, `core/types` |
-| `hardware/smart` | `bundle/tools`, `core/types` |
-| `hardware/badblocks` | `bundle/tools`, `core/types` |
-| `hardware/preparation` | `bundle/tools`, `core/types` |
-| `sessions/manager` | `core/types`, `hardware/identification` |
-| `reports/generator` | `core/types` |
-| `workflow/controller` | `hardware/*`, `sessions/manager`, `reports/generator` |
-| `ui/app` | `workflow/controller`, `bundle/tools`, `core/*` |
-| `main.py` | `ui/app` |
+| `models/disk` | (none) |
+| `models/classification` | (none) |
+| `models/operation` | `models/disk`, `models/classification` |
+| `models/report` | `models/disk`, `models/classification`, `models/operation` |
+| `utils/logger` | (none) |
+| `utils/paths` | (none) |
+| `utils/runner` | `utils/logger` |
+| `config` | `utils/paths` |
+| `core/detector` | `utils/runner`, `models/disk` |
+| `core/health` | `utils/runner`, `models/disk` |
+| `core/scanner` | `utils/runner` |
+| `core/partitioner` | `utils/runner` |
+| `core/formatter` | `utils/runner` |
+| `core/session` | `models/disk` |
+| `core/lock` | (none) |
+| `core/classifier` | `models/disk`, `models/classification` |
+| `core/reporter` | `models/report`, `utils/paths` |
+| `core/engine` | `core/*` (all), `models/*` (all), `utils/logger`, `config` |
+| `ui/app` | `core/*`, `models/*`, `config`, `utils/logger` |
+| `__main__` | `ui/app`, `utils/logger` |
 
 ---
 

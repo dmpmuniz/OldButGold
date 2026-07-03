@@ -89,7 +89,7 @@ def run_pipeline(
         try:
             if not verify_identity(device, disk_info.model, disk_info.serial):
                 _finish_step(sr, StepStatus.FAILED, "Device identity mismatch")
-                _skip_remaining("Identity mismatch")
+                _finish_remaining(StepStatus.SKIPPED)
                 return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
             _finish_step(sr, StepStatus.OK)
         except Exception as e:
@@ -123,7 +123,7 @@ def run_pipeline(
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
 
-        # Step 4: SMART Re-Collection
+        # Step 4: SMART Re-Collection (after short test, stored for comparison)
         sr = _run_step("SMART Re-Collection")
         step_results.append(sr)
         if is_cancelled() or disconnected:
@@ -131,7 +131,7 @@ def run_pipeline(
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
         try:
-            read_smart(device)
+            smart_mid = read_smart(device)
             _finish_step(sr, StepStatus.OK)
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))

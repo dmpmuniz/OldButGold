@@ -35,20 +35,20 @@ Performance optimizations shall never reduce correctness or transparency.
 
 The application shall be organized into clearly separated layers.
 
-Typical responsibilities include:
+Current layer organization:
 
-* User Interface
-* Workflow Controller
-* Tool Execution
-* Session Management
-* Device Discovery
-* SMART
-* Badblocks
-* Storage Preparation
-* Report Generation
-* Logging
+| Layer | Module(s) | Responsibility |
+|-------|-----------|----------------|
+| **Entry Point** | `__main__.py` | Privilege escalation, terminal setup |
+| **Configuration** | `config.py` | Runtime config persistence (JSON) |
+| **Core** | `core/` | 10 modules covering device discovery, SMART, Badblocks, partitioning, formatting, session, locking, classification, reporting, pipeline orchestration |
+| **Models** | `models/` | 4 type modules: DiskInfo, SmartData, StepResult, ReportData |
+| **UI** | `ui/app.py` | Textual TUI, 9 screen classes |
+| **Utilities** | `utils/` | Logger, subprocess runner, path resolution |
 
-Each layer shall have a single responsibility.
+Each module shall have a single responsibility.
+
+Business logic shall remain separated from the user interface.
 
 ---
 

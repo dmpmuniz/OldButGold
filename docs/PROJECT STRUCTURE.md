@@ -104,29 +104,53 @@ Documentation shall never be duplicated elsewhere.
 All application source code shall reside inside:
 
 ```text
-src/
+obg/
 ```
 
-Example layout:
+Current layout:
 
 ```text
-src/
+obg/
 │
-├── app/
-├── core/
-├── hardware/
-├── workflow/
-├── ui/
-├── reports/
-├── sessions/
-├── bundle/
-│
-└── main.py
+├── __init__.py        # Package version
+├── __main__.py        # Entry point
+├── config.py          # Runtime configuration persistence
+├── core/              # Business logic
+│   ├── detector.py    # Device discovery (lsblk, device type)
+│   ├── health.py      # SMART collection, short test
+│   ├── scanner.py     # Badblocks execution
+│   ├── partitioner.py # GPT, partition creation
+│   ├── formatter.py   # Filesystem creation (mkfs.*)
+│   ├── engine.py      # Pipeline orchestration (state machine)
+│   ├── session.py     # Session create/load/save/delete
+│   ├── lock.py        # Device locking (fcntl)
+│   ├── classifier.py  # Gold/Silver/Bronze/Failed
+│   ├── reporter.py    # Markdown report generator
+│   └── __init__.py
+├── models/            # Type definitions
+│   ├── disk.py        # DiskInfo, SmartData, SmartDelta, DiskSnapshot
+│   ├── classification.py  # Classification enum + result
+│   ├── operation.py   # StepStatus, StepResult, OperationResult
+│   ├── report.py      # ReportData
+│   └── __init__.py
+├── ui/                # User interface (Textual)
+│   ├── app.py         # App class + all screen definitions
+│   └── __init__.py
+└── utils/             # Utilities
+    ├── logger.py      # Structured diagnostic logging
+    ├── runner.py      # Subprocess execution, tool resolution
+    ├── paths.py       # Config/report directory resolution
+    └── __init__.py
 ```
 
 Every directory shall have a single responsibility.
 
 Business logic shall remain separated from the user interface.
+
+> **Note:** The current layout differs from the originally planned architecture
+> (`src/hardware/`, `src/workflow/`, `src/bundle/`, etc.). Business logic lives
+> in `core/`, types in `models/`, utilities in `utils/`. This is a valid flat
+> structure; future refactoring may reintroduce the modular separation.
 
 ---
 

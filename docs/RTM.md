@@ -17,6 +17,9 @@
 | Validated | Acceptance test passed |
 | Blocked | Cannot proceed (dependency or ambiguity) |
 
+> **Note:** File paths in this RTM were updated to reflect the current `obg/` structure.
+> See `COMPLIANCE_AUDIT.md` for the authoritative implementation mapping.
+
 ---
 
 ## RTM-01: Application Startup (Stage 1)
@@ -28,6 +31,8 @@
 | **Acceptance Test** | A-001, A-002, A-003 |
 | **Dependencies** | RTM-011 (Tool Verification) |
 | **Status** | Implemented |
+
+**Implementation:** `obg/__main__.py` + `obg/ui/app.py` StartupScreen
 
 **Requirements:**
 - Initialize runtime
@@ -48,6 +53,8 @@
 | **Dependencies** | RTM-011 (Tool Verification) |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Enumerate every supported block device
 - Obtain immediately available information without diagnostic tests
@@ -67,6 +74,8 @@
 | **Dependencies** | RTM-002 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Auto-protect system drive, boot device, Linux installation drive, unsupported removable devices, read-only devices
 - Protected devices clearly identified
@@ -83,6 +92,8 @@
 | **Acceptance Test** | C-001, C-002 |
 | **Dependencies** | RTM-002, RTM-016 (Session System) |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Determine whether selected drive has interrupted validation session
@@ -101,6 +112,8 @@
 | **Dependencies** | RTM-004 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Offer: Recover Validation, Restart Validation, View Session Details, Return
 - Application shall never choose automatically
@@ -116,6 +129,8 @@
 | **Acceptance Test** | B-004, C-003, C-005 |
 | **Dependencies** | RTM-002 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Uniquely identify HDD using hardware fingerprint
@@ -134,6 +149,8 @@
 | **Dependencies** | RTM-006 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Collect initial SMART snapshot before any diagnostic operation
 - Serves as baseline for later comparison
@@ -149,6 +166,8 @@
 | **Acceptance Test** | D-002, D-003 |
 | **Dependencies** | RTM-007 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Execute SMART Short Self-Test
@@ -166,6 +185,8 @@
 | **Acceptance Test** | E-001, E-002, E-003 |
 | **Dependencies** | RTM-008 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Validation Profile: Recommended, Extended
@@ -185,6 +206,8 @@
 | **Dependencies** | RTM-009 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Display: selected drive, validation profile, filesystem, volume label
 - Clear warning: all existing data permanently destroyed
@@ -201,6 +224,8 @@
 | **Acceptance Test** | G-001, G-002, G-003, G-004 |
 | **Dependencies** | RTM-010, RTM-015 (Profiles) |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Execute Badblocks according to selected validation profile
@@ -220,6 +245,8 @@
 | **Dependencies** | RTM-011 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Collect new SMART snapshot immediately after Badblocks completes
 - Compare against initial snapshot
@@ -237,6 +264,8 @@
 | **Acceptance Test** | H-001, H-002, H-003 |
 | **Dependencies** | RTM-011 (must complete successfully) |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Execute only if validation completes successfully
@@ -258,6 +287,8 @@
 | **Dependencies** | RTM-013, RTM-012 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Generate Markdown report only
 - Report naming: OldButGold-YYYYMMDD-HHMMSS-<DeviceModel>.md
@@ -277,6 +308,8 @@
 | **Dependencies** | None |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Exactly two profiles: Recommended, Extended
 - Recommended: optimized for practical refurbishment
@@ -293,6 +326,8 @@
 | **Acceptance Test** | C-001 through C-005, L-001, L-002 |
 | **Dependencies** | RTM-006 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Each HDD owns one independent session
@@ -315,6 +350,8 @@
 | **Dependencies** | RTM-016 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Resume only after fingerprint validation, session integrity verification, compatibility verification
 - Resume from internal safety rollback (implementation detail, not user-configurable)
@@ -333,6 +370,8 @@
 | **Acceptance Test** | Implicit in all error-path tests |
 | **Dependencies** | None |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Stop affected workflow on failure
@@ -353,6 +392,8 @@
 | **Dependencies** | RTM-011 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Display: current stage, operation, completed stages, failed stages, overall progress, stage progress, estimated remaining time, elapsed time, throughput, processed data
 - Only actual execution data
@@ -369,6 +410,8 @@
 | **Acceptance Test** | Implicit in report tests |
 | **Dependencies** | RTM-012, RTM-011, RTM-013 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Four levels: Gold, Silver, Bronze, Failed
@@ -390,6 +433,8 @@
 | **Acceptance Test** | M-001, M-002, M-003 |
 | **Dependencies** | None |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Self-contained: no host package installation required
@@ -413,6 +458,8 @@
 | **Dependencies** | RTM-021 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Request administrative privileges only once via pkexec
 - Entire validation workflow executes within elevated runtime
@@ -429,6 +476,8 @@
 | **Acceptance Test** | K-001 through K-005 |
 | **Dependencies** | RTM-001 through RTM-014 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Simple, deterministic, keyboard-first, information-oriented, distraction-free
@@ -451,6 +500,8 @@
 | **Dependencies** | RTM-001 through RTM-014 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Sequence stages, enforce order, validate transitions, prevent invalid paths
 - Every workflow transition explicit
@@ -467,6 +518,8 @@
 | **Acceptance Test** | Release verification |
 | **Dependencies** | RTM-021 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Single distributable directory
@@ -488,6 +541,8 @@
 | **Dependencies** | None |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Diagnostic logging for troubleshooting
 - Structured: timestamps, stages, tools, failures, warnings, recovery events
@@ -506,6 +561,8 @@
 | **Dependencies** | RTM-006 |
 | **Status** | Implemented |
 
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
+
 **Requirements:**
 - Acquire exclusive lock for selected HDD before validation
 - If another instance owns lock, deny validation with clear explanation
@@ -522,6 +579,8 @@
 | **Acceptance Test** | J-001, J-002, J-003 |
 | **Dependencies** | RTM-014 |
 | **Status** | Implemented |
+
+**Implementation:** See COMPLIANCE_AUDIT.md for authoritative path mapping
 
 **Requirements:**
 - Remove checkpoints, temporary files, session metadata on successful completion

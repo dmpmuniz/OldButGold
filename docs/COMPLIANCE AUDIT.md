@@ -9,34 +9,34 @@
 
 | RTM ID | Requirement | Implementation | Status |
 |--------|------------|----------------|--------|
-| RTM-001 | Application Startup | `main.py`, `ui/app.py` StartupScreen | ✅ Implemented |
-| RTM-002 | Device Discovery | `hardware/discovery.py` DeviceDiscovery | ✅ Implemented |
-| RTM-003 | Protected Devices | `hardware/discovery.py` _check_protection | ✅ Implemented |
-| RTM-004 | Session Detection | `sessions/manager.py` find_session_for_device | ✅ Implemented |
-| RTM-005 | Session Decision | `ui/screens.py` SessionDecisionScreen | ✅ Implemented |
-| RTM-006 | Drive Identification | `hardware/identification.py` DeviceIdentifier | ✅ Implemented |
-| RTM-007 | Initial SMART Collection | `hardware/smart.py` collect_snapshot | ✅ Implemented |
-| RTM-008 | SMART Short Self-Test | `hardware/smart.py` run_short_self_test | ✅ Implemented |
-| RTM-009 | Validation Configuration | `ui/screens.py` ValidationConfigScreen | ✅ Implemented |
-| RTM-010 | Final Confirmation | `ui/screens.py` FinalConfirmationScreen | ✅ Implemented |
-| RTM-011 | Badblocks Validation | `hardware/badblocks.py` BadblocksExecutor | ✅ Implemented |
-| RTM-012 | Final SMART Collection | `hardware/smart.py` collect_snapshot + compare | ✅ Implemented |
-| RTM-013 | Drive Preparation | `hardware/preparation.py` DrivePreparation | ✅ Implemented |
-| RTM-014 | Report Generation | `reports/generator.py` ReportGenerator | ✅ Implemented |
-| RTM-015 | Validation Profiles | `core/constants.py`, `core/types.py` | ✅ Implemented |
-| RTM-016 | Session System | `sessions/manager.py` SessionManager | ✅ Implemented |
-| RTM-017 | Session Recovery | `sessions/manager.py` get_resume_offset | ✅ Implemented |
-| RTM-018 | Error Handling | `bundle/tools.py` exceptions, all modules | ✅ Implemented |
-| RTM-019 | Progress Reporting | `ui/screens.py` ExecutionScreen, ProgressBar | ✅ Implemented |
-| RTM-020 | Classification Engine | `core/classification.py` ClassificationEngine | ✅ Implemented |
-| RTM-021 | Tool Execution & Bundle | `bundle/tools.py` ToolExecutor | ✅ Implemented |
-| RTM-022 | Privilege Escalation | `privilege.py` request_elevated_privileges | ✅ Implemented |
-| RTM-023 | UI Layer | `ui/screens.py` 9 screens, `ui/app.css` | ✅ Implemented |
-| RTM-024 | Workflow Controller | `workflow/controller.py` WorkflowController | ✅ Implemented |
-| RTM-025 | Build & Release | `scripts/build.py` | ✅ Implemented |
-| RTM-026 | Logging | `logging_setup.py` | ✅ Implemented |
-| RTM-027 | Device Locking | `workflow/controller.py` (lock mechanism) | ✅ Implemented |
-| RTM-028 | Cleanup | `sessions/manager.py` cleanup_completed_sessions | ✅ Implemented |
+| RTM-001 | Application Startup | `obg/__main__.py`, `obg/ui/app.py` StartupScreen | ✅ Implemented |
+| RTM-002 | Device Discovery | `obg/core/detector.py` list_disks | ✅ Implemented |
+| RTM-003 | Protected Devices | `obg/core/detector.py` is_supported flag | ✅ Implemented |
+| RTM-004 | Session Detection | `obg/core/session.py` find_session | ✅ Implemented |
+| RTM-005 | Session Decision | `obg/ui/app.py` SessionDecisionScreen | ✅ Implemented |
+| RTM-006 | Drive Identification | `obg/core/detector.py` verify_identity | ✅ Implemented |
+| RTM-007 | Initial SMART Collection | `obg/core/health.py` read_smart | ✅ Implemented |
+| RTM-008 | SMART Short Self-Test | `obg/core/health.py` run_short_test | ✅ Implemented |
+| RTM-009 | Validation Configuration | `obg/ui/app.py` ValidationConfigScreen | ✅ Implemented |
+| RTM-010 | Final Confirmation | `obg/ui/app.py` FinalConfirmationScreen | ✅ Implemented |
+| RTM-011 | Badblocks Validation | `obg/core/scanner.py` run_badblocks | ✅ Implemented |
+| RTM-012 | Final SMART Collection | `obg/core/health.py` read_smart + `obg/core/engine.py` comparison | ✅ Implemented |
+| RTM-013 | Drive Preparation | `obg/core/partitioner.py` create_gpt/create_partition + `obg/core/formatter.py` | ✅ Implemented |
+| RTM-014 | Report Generation | `obg/core/reporter.py` generate_report | ✅ Implemented |
+| RTM-015 | Validation Profiles | `obg/config.py` VALID_PROFILES, `obg/core/scanner.py` profile param | ✅ Implemented |
+| RTM-016 | Session System | `obg/core/session.py` create_session/find_session/update_checkpoint | ✅ Implemented |
+| RTM-017 | Session Recovery | `obg/core/session.py` find_session + engine.py resume flow | ✅ Implemented |
+| RTM-018 | Error Handling | All modules, `obg/utils/runner.py` exceptions | ✅ Implemented |
+| RTM-019 | Progress Reporting | `obg/ui/app.py` ExecutionScreen, ProgressBar | ✅ Implemented |
+| RTM-020 | Classification Engine | `obg/core/classifier.py` classify | ✅ Implemented |
+| RTM-021 | Tool Execution & Bundle | `obg/utils/runner.py` run + _resolve_tool | ✅ Implemented |
+| RTM-022 | Privilege Escalation | `obg/__main__.py` pkexec flow | ✅ Implemented |
+| RTM-023 | UI Layer | `obg/ui/app.py` 9 screens | ✅ Implemented |
+| RTM-024 | Workflow Controller | `obg/core/engine.py` run_pipeline | ✅ Implemented |
+| RTM-025 | Build & Release | `obg.spec` + manual build process | 🟡 Partially |
+| RTM-026 | Logging | `obg/utils/logger.py` | ✅ Implemented |
+| RTM-027 | Device Locking | `obg/core/lock.py` acquire_lock/release_lock | ✅ Implemented |
+| RTM-028 | Cleanup | `obg/core/session.py` complete_session/delete_session | ✅ Implemented |
 
 ---
 
