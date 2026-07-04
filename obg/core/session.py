@@ -26,6 +26,7 @@ def create_session(disk: DiskInfo) -> str:
         "physical_sector": disk.physical_sector,
         "state": "in_progress",
         "badblocks_offset": 0,
+        "current_stage": "",
     }
     path = _session_path(disk.serial)
     with open(path, "w") as f:
@@ -53,6 +54,20 @@ def find_session(disk: DiskInfo) -> dict | None:
         return None
 
 
+def update_stage(disk: DiskInfo, stage: str) -> None:
+    path = _session_path(disk.serial)
+    if not path.exists():
+        return
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        data["current_stage"] = stage
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+    except (OSError, json.JSONDecodeError):
+        pass
+
+
 def update_checkpoint(disk: DiskInfo, offset: float) -> None:
     path = _session_path(disk.serial)
     if not path.exists():
@@ -76,10 +91,4 @@ def complete_session(disk: DiskInfo) -> None:
             pass
 
 
-def delete_session(serial: str) -> None:
-    path = _session_path(serial)
-    if path.exists():
-        try:
-            path.unlink()
-        except OSError:
-            pass
+

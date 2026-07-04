@@ -78,10 +78,3 @@ def test_complete_session_deletes_file(tmp_session, disk):
     sess.complete_session(disk)
     assert not path.exists()
 
-
-def test_delete_session_by_serial(tmp_session, disk):
-    sess.create_session(disk)
-    path = tmp_session / f"{disk.serial}.json"
-    assert path.exists()
-    sess.delete_session(disk.serial)
-    assert not path.exists()

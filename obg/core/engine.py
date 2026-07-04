@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Callable
 from obg.models.disk import DiskInfo, DiskSnapshot, SmartDelta
 from obg.models.operation import StepStatus, StepResult, OperationResult
+from obg.models.classification import Classification, ClassificationResult
 from obg import __version__
 from obg.models.report import ReportData
 from obg.core.detector import verify_identity
@@ -14,8 +15,7 @@ from obg.core.formatter import format_filesystem
 from obg.core.classifier import classify
 from obg.core.reporter import generate_report
 from obg.core.lock import acquire_lock, release_lock
-from obg.core.session import create_session, find_session, update_checkpoint, complete_session
-from obg.utils import logger
+from obg.core.session import create_session, find_session, update_checkpoint, update_stage, complete_session
 
 
 STEPS = [
@@ -54,7 +54,6 @@ def run_pipeline(
     bb_count = 0
     report_path = None
     partition = None
-    disconnected = False
 
     if not acquire_lock(device):
         raise RuntimeError(f"Cannot acquire exclusive lock for {device}")
@@ -82,7 +81,7 @@ def run_pipeline(
         # Step 1: Drive Identification
         sr = _run_step("Drive Identification")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -100,7 +99,7 @@ def run_pipeline(
         # Step 2: Initial SMART Collection
         sr = _run_step("Initial SMART Collection")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -113,7 +112,7 @@ def run_pipeline(
         # Step 3: SMART Short Self-Test
         sr = _run_step("SMART Short Self-Test")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -126,47 +125,7 @@ def run_pipeline(
         # Step 4: SMART Re-Collection (after short test, stored for comparison)
         sr = _run_step("SMART Re-Collection")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
-            smart_mid = read_smart(device)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-
-        # Step 5: Badblocks Validation
-        sr = _run_step("Badblocks Validation")
-        step_results.append(sr)
-        if is_cancelled() or disconnected:
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
-            resume_offset = 0
-            if resume:
-                existing = find_session(disk_info)
-                if existing:
-                    resume_offset = existing.get("badblocks_offset", 0)
-            if resume_offset == 0:
-                create_session(disk_info)
-            def _on_checkpoint(offset: float) -> None:
-                update_checkpoint(disk_info, offset)
-            bb_count = run_badblocks(
-                device, on_output, on_checkpoint=_on_checkpoint,
-                test_mode=test_mode, profile=profile, resume_offset=resume_offset,
-            )
-            _finish_step(sr, StepStatus.OK, output=f"{bb_count} bad blocks")
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-            _finish_remaining(StepStatus.SKIPPED)
-            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-
-        # Step 6: Final SMART Collection
-        sr = _run_step("Final SMART Collection")
-        step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -176,10 +135,55 @@ def run_pipeline(
         except Exception as e:
             _finish_step(sr, StepStatus.FAILED, str(e))
 
+        # Step 5: Badblocks Validation
+        sr = _run_step("Badblocks Validation")
+        step_results.append(sr)
+        if is_cancelled():
+            _finish_step(sr, StepStatus.CANCELLED)
+            _finish_remaining(StepStatus.CANCELLED)
+            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        try:
+            resume_offset = 0
+            if resume:
+                existing = find_session(disk_info)
+                if existing:
+                    resume_offset = existing.get("badblocks_offset", 0)
+                    stage = existing.get("current_stage", "")
+                    if stage and stage != "Badblocks Validation":
+                        resume_offset = 0
+            if resume_offset == 0:
+                create_session(disk_info)
+            update_stage(disk_info, "Badblocks Validation")
+            def _on_checkpoint(offset: float) -> None:
+                update_checkpoint(disk_info, offset)
+            bb_count = run_badblocks(
+                device, on_output, on_checkpoint=_on_checkpoint,
+                test_mode=test_mode, profile=profile, resume_offset=resume_offset,
+            )
+            _finish_step(sr, StepStatus.OK, output=f"{bb_count} bad blocks")
+            update_stage(disk_info, "Post Validation")
+        except Exception as e:
+            _finish_step(sr, StepStatus.FAILED, str(e))
+            _finish_remaining(StepStatus.SKIPPED)
+            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+
+        # Step 6: Final SMART Collection
+        sr = _run_step("Final SMART Collection")
+        step_results.append(sr)
+        if is_cancelled():
+            _finish_step(sr, StepStatus.CANCELLED)
+            _finish_remaining(StepStatus.CANCELLED)
+            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        try:
+            read_smart(device)
+            _finish_step(sr, StepStatus.OK)
+        except Exception as e:
+            _finish_step(sr, StepStatus.FAILED, str(e))
+
         # Step 7: SMART Comparison
         sr = _run_step("SMART Comparison")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -200,7 +204,7 @@ def run_pipeline(
         # Step 8: Create GPT
         sr = _run_step("Create GPT")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -215,7 +219,7 @@ def run_pipeline(
         # Step 9: Create Partition
         sr = _run_step("Create Partition")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -230,7 +234,7 @@ def run_pipeline(
         # Step 10: Format Filesystem
         sr = _run_step("Format Filesystem")
         step_results.append(sr)
-        if is_cancelled() or disconnected:
+        if is_cancelled():
             _finish_step(sr, StepStatus.CANCELLED)
             _finish_remaining(StepStatus.CANCELLED)
             return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
@@ -297,7 +301,20 @@ def _build_result(
         smart_after=smart_after, smart_delta=delta,
         badblocks_count=bb_count, badblocks_raw_output="",
     )
-    classification = classify(snapshot)
+    if not success:
+        failed_step = None
+        for s in steps:
+            if s.status in (StepStatus.FAILED, StepStatus.SKIPPED):
+                failed_step = s
+                break
+        reason = f"Pipeline failed at: {failed_step.name}" if failed_step else "Validation did not complete successfully"
+        classification = ClassificationResult(
+            classification=Classification.FAILED,
+            reasons=[reason],
+            recommendation="Not recommended for use — validation could not be completed.",
+        )
+    else:
+        classification = classify(snapshot)
     return OperationResult(
         success=success, cancelled=cancelled, steps=steps,
         snapshot=snapshot, classification=classification,

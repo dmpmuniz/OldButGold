@@ -11,12 +11,31 @@ from typing import Callable
 from obg.utils import logger
 
 
+REQUIRED_BUNDLE_TOOLS = [
+    "smartctl", "badblocks", "lsblk", "sgdisk", "partprobe",
+    "mkfs.ext4", "mkfs.ntfs", "mkfs.exfat", "mkfs.fat",
+    "blockdev",
+]
+
+
 @dataclass
 class RunResult:
     returncode: int
     stdout: str
     stderr: str
     duration_seconds: float
+
+
+def verify_bundle() -> list[str]:
+    bundle = _bundle_dir()
+    if not bundle:
+        return []
+    missing: list[str] = []
+    for name in REQUIRED_BUNDLE_TOOLS:
+        tp = bundle / "tools" / name
+        if not (tp.exists() and os.access(tp, os.X_OK)):
+            missing.append(name)
+    return missing
 
 
 def _bundle_dir() -> Path | None:
@@ -31,7 +50,10 @@ def _resolve_tool(name: str) -> str:
         tp = bundle / "tools" / name
         if tp.exists() and os.access(tp, os.X_OK):
             return str(tp)
-        logger.warn("BUNDLE", f"Tool '{name}' not in bundle, falling back to host")
+        raise FileNotFoundError(
+            f"Required tool '{name}' not found in application bundle. "
+            f"OldButGold must be executed from a complete distribution."
+        )
     which = shutil.which(name)
     if which:
         return which

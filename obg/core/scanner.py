@@ -19,11 +19,14 @@ def run_badblocks(
     profile: str = "recommended",
     resume_offset: float = 0,
 ) -> int:
-    if resume_offset > 0:
-        on_output(f"RESUME: resuming from {resume_offset:.0f}% (safety margin applied)")
-
     command = ["badblocks", "-w", "-s", "-v", device]
-    if test_mode:
+    if resume_offset > 0:
+        MARGIN_BLOCKS = 100
+        total_blocks = _get_block_count(device)
+        start_block = max(0, int(total_blocks * resume_offset / 100) - MARGIN_BLOCKS)
+        command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(total_blocks), str(start_block)]
+        on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}/{total_blocks})")
+    elif test_mode:
         total_blocks = _get_block_count(device)
         limit = max(1000, int(total_blocks * 0.01))
         command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(limit), "0"]

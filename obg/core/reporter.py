@@ -1,6 +1,5 @@
 from __future__ import annotations
 import os
-from datetime import datetime
 from obg.models.report import ReportData
 from obg.utils.paths import reports_dir
 
@@ -109,6 +108,7 @@ def _generate_markdown(data: ReportData) -> str:
         "|--------------------|------------------------------|",
         f"| Status             | {'Completed' if data.success else 'Interrupted':<29s} |",
         f"| Bad Blocks         | {data.snapshot.badblocks_count:<29} |",
+        f"| Block Size         | {'4096 B':<29s} |",
         f"| Duration           | {total:<29s} |",
         "",
         "---",

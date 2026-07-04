@@ -11,12 +11,12 @@ from textual.screen import Screen
 from textual.widgets import Static, Button, Input, ProgressBar
 from textual import work
 from obg import __version__
-from obg.utils import logger
+from obg.utils.runner import verify_bundle
 from obg.core.detector import list_disks
 from obg.core.engine import run_pipeline
 from obg.core.health import read_smart, run_short_test
 from obg.core.session import find_session, complete_session
-from obg.config import load_config, save_config
+from obg.config import load_config, save_config, VALID_PROFILES, VALID_FILESYSTEMS
 from obg.models.disk import DiskInfo
 from obg.models.operation import StepStatus, OperationResult
 
@@ -154,6 +154,10 @@ class StartupScreen(Screen):
     @work(thread=True)
     def _init(self) -> None:
         try:
+            missing = verify_bundle()
+            if missing:
+                names = ", ".join(missing)
+                raise RuntimeError(f"Missing bundled tools: {names}")
             disks = list_disks()
             self.app.call_from_thread(self._init_done, disks)
         except Exception as e:
@@ -462,9 +466,9 @@ class ValidationConfigScreen(Screen):
         self.disk = disk
         self.resume = resume
         self.config = load_config()
-        self.FS_OPTIONS = ["ext4", "ntfs", "exfat", "fat32"]
-        self.PROFILES = ["Recommended", "Extended"]
-        self._profile_idx = 0 if self.config["profile"] == "recommended" else 1
+        self.FS_OPTIONS = VALID_FILESYSTEMS
+        self.PROFILES = [p.capitalize() for p in VALID_PROFILES]
+        self._profile_idx = next((i for i, p in enumerate(VALID_PROFILES) if p == self.config["profile"]), 0)
         self._fs_idx = self.FS_OPTIONS.index(self.config["filesystem"]) if self.config["filesystem"] in self.FS_OPTIONS else 0
 
     def compose(self) -> ComposeResult:
@@ -510,8 +514,9 @@ class ValidationConfigScreen(Screen):
         cid = getattr(event.widget, 'id', None)
         if cid and cid.startswith("prof-"):
             p = cid[5:]
-            self._profile_idx = 0 if p == "recommended" else 1
-            self._update_labels()
+            if p in VALID_PROFILES:
+                self._profile_idx = VALID_PROFILES.index(p)
+                self._update_labels()
         elif cid and cid.startswith("fs-"):
             f = cid[3:]
             if f in self.FS_OPTIONS:
@@ -520,10 +525,7 @@ class ValidationConfigScreen(Screen):
 
     def _move(self, direction: int, axis: int) -> None:
         if axis == 1:
-            if direction > 0:
-                self._profile_idx = (self._profile_idx + 1) % 2
-            else:
-                self._profile_idx = (self._profile_idx - 1) % 2
+            self._profile_idx = (self._profile_idx + direction) % len(self.PROFILES)
         else:
             if direction > 0:
                 self._fs_idx = (self._fs_idx + 1) % len(self.FS_OPTIONS)
@@ -713,13 +715,14 @@ class ExecutionScreen(Screen):
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
-        self._output_lines.append(line)
-        if len(self._output_lines) > 200:
-            self._output_lines = self._output_lines[-200:]
-        try:
-            self.query_one("#live-output").update("\n".join(self._output_lines[-20:]))
-        except Exception:
-            pass
+        if "% done" not in line:
+            self._output_lines.append(line)
+            if len(self._output_lines) > 200:
+                self._output_lines = self._output_lines[-200:]
+            try:
+                self.query_one("#live-output").update("\n".join(self._output_lines[-20:]))
+            except Exception:
+                pass
         m = re.search(r'Testing with pattern (\S+):\s+([\d.]+)% done,\s+([\d:]+) elapsed', line)
         if m:
             self._bb_pattern = m.group(1)

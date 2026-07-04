@@ -34,7 +34,7 @@ mkdir -p "$TOOLS_DIR" "$LIB_DIR"
 
 # Tools required by TOOLCHAIN_SPECIFICATION §8
 REQUIRED_TOOLS=(
-    smartctl badblocks lsblk blkid findmnt wipefs
+    smartctl badblocks lsblk blockdev
     sgdisk partprobe mkfs.ext4 mkfs.ntfs mkfs.exfat mkfs.fat
 )
 
@@ -47,11 +47,11 @@ if $ALPINE_FLAG; then
     echo "Building Alpine bundle via Docker..."
     echo "Target: $TARGET"
     docker run --rm -v "$TOOLS_DIR:/tools" -v "$LIB_DIR:/lib" alpine:3.20 sh <<'DOCKEREOF'
-        apk add --no-cache smartmontools e2fsprogs e2fsprogs-extra lsblk blkid findmnt wipefs \
+        apk add --no-cache smartmontools e2fsprogs e2fsprogs-extra lsblk \
             gptfdisk parted ntfs-3g-progs exfatprogs dosfstools
 
         # Copy each required tool
-        for tool in smartctl badblocks lsblk blkid findmnt wipefs sgdisk partprobe \
+        for tool in smartctl badblocks lsblk sgdisk partprobe \
                     mkfs.ext4 mkfs.ntfs mkfs.exfat mkfs.fat; do
             path=$(which "$tool" 2>/dev/null || echo "")
             [ -n "$path" ] && cp -L "$path" /tools/ && echo "  copied $tool"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 import json
 import os
-import re
 from obg.models.disk import DiskInfo
 from obg.utils.runner import run
 
@@ -78,7 +77,7 @@ def _is_unsupported(dev: dict) -> bool:
 def list_disks() -> list[DiskInfo]:
     cmd = [
         "lsblk", "-J", "-b", "-o",
-        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,ROTA,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,ALIGNMENT",
+        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,REV,TRAN,ROTA,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,ALIGNMENT,PTTYPE",
     ]
     result = run(cmd)
     if result.returncode != 0:
@@ -112,7 +111,7 @@ def list_disks() -> list[DiskInfo]:
             device=f"/dev/{name}",
             model=model,
             serial=serial,
-            firmware="Unknown",
+            firmware=dev.get("rev") or "Unknown",
             capacity_bytes=size,
             capacity_human=_parse_capacity_human(size),
             interface=interface,
@@ -126,7 +125,7 @@ def list_disks() -> list[DiskInfo]:
             smart_supported=_check_smart(f"/dev/{name}"),
             uas_enabled=(transport == "usb-uas"),
             current_fs=dev.get("fstype"),
-            partition_table=None,
+            partition_table=dev.get("pttype"),
             is_mounted=mounted,
             is_boot_disk=boot_disk,
             temperature=None,
