@@ -11,9 +11,10 @@ from textual.screen import Screen
 from textual.widgets import Static, Button, Input, ProgressBar
 from textual import work
 from obg import __version__
-from obg.utils.runner import verify_bundle
+
 from obg.core.detector import list_disks
-from obg.core.engine import run_pipeline
+from obg.core.engine import run_pipeline, STEPS as PIPELINE_STAGES
+from obg.core.reporter import _format_duration as _format_eta
 from obg.core.health import read_smart, run_short_test
 from obg.core.session import find_session, complete_session
 from obg.config import load_config, save_config, VALID_PROFILES, VALID_FILESYSTEMS
@@ -154,10 +155,6 @@ class StartupScreen(Screen):
     @work(thread=True)
     def _init(self) -> None:
         try:
-            missing = verify_bundle()
-            if missing:
-                names = ", ".join(missing)
-                raise RuntimeError(f"Missing bundled tools: {names}")
             disks = list_disks()
             self.app.call_from_thread(self._init_done, disks)
         except Exception as e:
@@ -404,7 +401,7 @@ class DriveInfoScreen(Screen):
                         yield Static("  Geometry", classes="group-title")
                         yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
                         yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
-                        yield Static(f"  RPM: {self.disk.rpm or 'N/A'}")
+                        yield Static(f"  RPM: N/A")
             yield Horizontal(
                 Button(" Continue ", id="continue-btn"),
                 Button(" Back ", id="back-btn"),
@@ -631,29 +628,6 @@ class ExecutionScreen(Screen):
         self._last_pct_time = 0.0
         self._last_pct = 0.0
 
-    PIPELINE_STAGES = [
-        "Drive Identification",
-        "Initial SMART Collection",
-        "SMART Short Self-Test",
-        "SMART Re-Collection",
-        "Badblocks Validation",
-        "Final SMART Collection",
-        "SMART Comparison",
-        "Create GPT",
-        "Create Partition",
-        "Format Filesystem",
-        "Generate Report",
-        "Session Cleanup",
-    ]
-
-    def _format_eta(self, seconds: float) -> str:
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        s = int(seconds % 60)
-        if h:
-            return f"{h}h {m:02d}m"
-        return f"{m}m {s:02d}s"
-
     def compose(self) -> ComposeResult:
         mode = "  [TEST MODE]" if self.app.test_mode else ""
         with Container(id="app-frame"):
@@ -662,7 +636,7 @@ class ExecutionScreen(Screen):
                 with Horizontal():
                     with VerticalScroll(classes="steps-col"):
                         yield Static("  Pipeline", classes="group-title")
-                        for s in self.PIPELINE_STAGES:
+                        for s in PIPELINE_STAGES:
                             w = Static(f"  [ ]  {s}", classes="step-pending")
                             self._step_widgets[s] = w
                             yield w

@@ -3,19 +3,11 @@ import os
 import shutil
 import subprocess
 import sys
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 from obg.utils import logger
-
-
-REQUIRED_BUNDLE_TOOLS = [
-    "smartctl", "badblocks", "lsblk", "sgdisk", "partprobe",
-    "mkfs.ext4", "mkfs.ntfs", "mkfs.exfat", "mkfs.fat",
-    "blockdev",
-]
 
 
 @dataclass
@@ -26,28 +18,16 @@ class RunResult:
     duration_seconds: float
 
 
-def verify_bundle() -> list[str]:
-    bundle = _bundle_dir()
-    if not bundle:
-        return []
-    missing: list[str] = []
-    for name in REQUIRED_BUNDLE_TOOLS:
-        tp = bundle / "tools" / name
-        if not (tp.exists() and os.access(tp, os.X_OK)):
-            missing.append(name)
-    return missing
-
-
-def _bundle_dir() -> Path | None:
+def _tool_dir() -> Path | None:
     if getattr(sys, 'frozen', False):
-        return Path(sys._MEIPASS)
+        return Path(sys.executable).parent
     return None
 
 
 def _resolve_tool(name: str) -> str:
-    bundle = _bundle_dir()
-    if bundle:
-        tp = bundle / "tools" / name
+    exe_dir = _tool_dir()
+    if exe_dir:
+        tp = exe_dir / "tools" / name
         if tp.exists() and os.access(tp, os.X_OK):
             return str(tp)
         raise FileNotFoundError(
@@ -62,16 +42,11 @@ def _resolve_tool(name: str) -> str:
 
 def _build_env() -> dict[str, str]:
     env = os.environ.copy()
-    bundle = _bundle_dir()
-    if bundle and (bundle / "lib").exists():
-        lib_path = str(bundle / "lib")
+    exe_dir = _tool_dir()
+    if exe_dir and (exe_dir / "lib").exists():
+        lib_path = str(exe_dir / "lib")
         existing = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = f"{lib_path}:{existing}" if existing else lib_path
-    # Clean _MEI paths from env
-    ld = env.get("LD_LIBRARY_PATH", "")
-    if ld:
-        parts = [p for p in ld.split(":") if "_MEI" not in p]
-        env["LD_LIBRARY_PATH"] = ":".join(parts)
     return env
 
 
@@ -91,62 +66,25 @@ def run(
         proc = subprocess.Popen(
             resolved,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE if input_data else None,
             env=env,
             preexec_fn=os.setsid,
             text=True,
         )
-        stdout_lines = []
-        stderr_lines = []
-
-        def _reader(stream, lines):
-            assert stream is not None
-            buf = ""
-            while True:
-                chunk = stream.read(4096)
-                if not chunk:
-                    if buf:
-                        line = buf.rstrip("\r\n")
-                        if line:
-                            lines.append(line)
-                            on_output(line)
-                    break
-                buf += chunk
-                while "\n" in buf or "\r" in buf:
-                    nidx = buf.find("\n")
-                    ridx = buf.find("\r")
-                    if nidx >= 0 and (ridx < 0 or nidx <= ridx):
-                        idx = nidx
-                    elif ridx >= 0:
-                        idx = ridx
-                    else:
-                        break
-                    line = buf[:idx].rstrip("\r\n")
-                    buf = buf[idx + 1:]
-                    if line:
-                        lines.append(line)
-                        on_output(line)
-
-        t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_lines), daemon=True)
-        t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_lines), daemon=True)
-        t_out.start()
-        t_err.start()
-
-        try:
-            t_out.join(timeout=timeout)
-            t_err.join(timeout=timeout)
-            proc.wait(timeout=timeout if timeout else None)
-        except (subprocess.TimeoutExpired, Exception):
-            os.killpg(os.getpgid(proc.pid), 15)
-            proc.wait()
-            raise
+        lines = []
+        for raw_line in proc.stdout:
+            line = raw_line.rstrip("\r\n")
+            if line:
+                lines.append(line)
+                on_output(line)
+        proc.wait()
         duration = time.monotonic() - start
         logger.debug("CMD", f"  -> rc={proc.returncode} duration={duration:.1f}s")
         return RunResult(
             returncode=proc.returncode or 0,
-            stdout="\n".join(stdout_lines),
-            stderr="\n".join(stderr_lines),
+            stdout="\n".join(lines),
+            stderr="",
             duration_seconds=duration,
         )
     else:

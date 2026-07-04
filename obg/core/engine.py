@@ -48,12 +48,6 @@ def run_pipeline(
 ) -> OperationResult:
     start_time = time.monotonic()
     step_results: list[StepResult] = []
-    smart_before = None
-    smart_after = None
-    delta = None
-    bb_count = 0
-    report_path = None
-    partition = None
 
     if not acquire_lock(device):
         raise RuntimeError(f"Cannot acquire exclusive lock for {device}")
@@ -78,71 +72,62 @@ def run_pipeline(
                 _finish_step(sr, status)
                 step_results.append(sr)
 
+        def _run(name: str, body: Callable, fatal: bool = True) -> bool:
+            sr = _run_step(name)
+            step_results.append(sr)
+            if is_cancelled():
+                _finish_step(sr, StepStatus.CANCELLED)
+                _finish_remaining(StepStatus.CANCELLED)
+                return False
+            try:
+                body()
+                _finish_step(sr, StepStatus.OK)
+                return True
+            except Exception as e:
+                _finish_step(sr, StepStatus.FAILED, str(e))
+                if fatal:
+                    _finish_remaining(StepStatus.SKIPPED)
+                    return False
+                return True
+
+        smart_before = None
+        smart_after = None
+        delta = None
+        bb_count = 0
+        report_path = None
+        partition = None
+        snapshot = None
+        classification = None
+
         # Step 1: Drive Identification
-        sr = _run_step("Drive Identification")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        def _identify():
             if not verify_identity(device, disk_info.model, disk_info.serial):
-                _finish_step(sr, StepStatus.FAILED, "Device identity mismatch")
-                _finish_remaining(StepStatus.SKIPPED)
-                return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-            _finish_remaining(StepStatus.SKIPPED)
-            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+                raise RuntimeError("Device identity mismatch")
+        if not _run("Drive Identification", _identify):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 2: Initial SMART Collection
-        sr = _run_step("Initial SMART Collection")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        def _init_smart():
+            nonlocal smart_before
             smart_before = read_smart(device)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
+        _run("Initial SMART Collection", _init_smart, fatal=False)
 
         # Step 3: SMART Short Self-Test
-        sr = _run_step("SMART Short Self-Test")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        def _short_test():
             ok = run_short_test(device)
-            _finish_step(sr, StepStatus.OK if ok else StepStatus.FAILED)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
+            if not ok:
+                raise RuntimeError("SMART Short Self-Test did not complete successfully")
+        _run("SMART Short Self-Test", _short_test, fatal=False)
 
-        # Step 4: SMART Re-Collection (after short test, stored for comparison)
-        sr = _run_step("SMART Re-Collection")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        # Step 4: SMART Re-Collection
+        def _recollect():
+            nonlocal smart_after
             smart_after = read_smart(device)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
+        _run("SMART Re-Collection", _recollect, fatal=False)
 
         # Step 5: Badblocks Validation
-        sr = _run_step("Badblocks Validation")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        def _badblocks():
+            nonlocal bb_count
             resume_offset = 0
             if resume:
                 existing = find_session(disk_info)
@@ -160,34 +145,16 @@ def run_pipeline(
                 device, on_output, on_checkpoint=_on_checkpoint,
                 test_mode=test_mode, profile=profile, resume_offset=resume_offset,
             )
-            _finish_step(sr, StepStatus.OK, output=f"{bb_count} bad blocks")
             update_stage(disk_info, "Post Validation")
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-            _finish_remaining(StepStatus.SKIPPED)
-            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        if not _run("Badblocks Validation", _badblocks):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 6: Final SMART Collection
-        sr = _run_step("Final SMART Collection")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
-            read_smart(device)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
+        _run("Final SMART Collection", lambda: read_smart(device), fatal=False)
 
         # Step 7: SMART Comparison
-        sr = _run_step("SMART Comparison")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        def _compare():
+            nonlocal delta
             if smart_before and smart_after:
                 delta = SmartDelta(
                     reallocated=smart_after.reallocated_sectors - smart_before.reallocated_sectors,
@@ -197,63 +164,30 @@ def run_pipeline(
                     temperature=(smart_after.temperature - smart_before.temperature)
                         if smart_after.temperature is not None and smart_before.temperature is not None else None,
                 )
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
+        _run("SMART Comparison", _compare, fatal=False)
 
         # Step 8: Create GPT
-        sr = _run_step("Create GPT")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
-            create_gpt(device)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-            _finish_remaining(StepStatus.SKIPPED)
-            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        if not _run("Create GPT", lambda: create_gpt(device)):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 9: Create Partition
-        sr = _run_step("Create Partition")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
+        def _part():
+            nonlocal partition
             partition = create_partition(device)
-            _finish_step(sr, StepStatus.OK, output=partition)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-            _finish_remaining(StepStatus.SKIPPED)
-            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        if not _run("Create Partition", _part):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 10: Format Filesystem
-        sr = _run_step("Format Filesystem")
-        step_results.append(sr)
-        if is_cancelled():
-            _finish_step(sr, StepStatus.CANCELLED)
-            _finish_remaining(StepStatus.CANCELLED)
-            return _build_result(False, True, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
-        try:
-            format_filesystem(partition, filesystem, label, on_output)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
-            _finish_remaining(StepStatus.SKIPPED)
-            return _build_result(False, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        if not _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output)):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 11: Generate Report
-        sr = _run_step("Generate Report")
-        step_results.append(sr)
-        try:
+        def _report():
+            nonlocal snapshot, classification, report_path
             snapshot = DiskSnapshot(
                 disk_info=disk_info, smart_before=smart_before,
                 smart_after=smart_after, smart_delta=delta,
-                badblocks_count=bb_count, badblocks_raw_output="",
+                badblocks_count=bb_count,
             )
             classification = classify(snapshot)
             report_data = ReportData(
@@ -265,9 +199,7 @@ def run_pipeline(
                 success=True,
             )
             report_path = generate_report(report_data)
-            _finish_step(sr, StepStatus.OK)
-        except Exception as e:
-            _finish_step(sr, StepStatus.FAILED, str(e))
+        _run("Generate Report", _report, fatal=False)
 
         # Step 12: Session Cleanup
         sr = _run_step("Session Cleanup")
@@ -279,7 +211,7 @@ def run_pipeline(
                 pass
         _finish_step(sr, StepStatus.OK)
 
-        return _build_result(True, False, step_results, disk_info, smart_before, smart_after, delta, bb_count, start_time, report_path)
+        return _build_result(True, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count, snapshot=snapshot, classification=classification)
     finally:
         release_lock(device)
 
@@ -288,33 +220,37 @@ def _build_result(
     success: bool,
     cancelled: bool,
     steps: list[StepResult],
-    disk_info: DiskInfo,
-    smart_before,
-    smart_after,
-    delta,
-    bb_count: int,
     start_time: float,
     report_path: str | None,
+    disk_info: DiskInfo,
+    smart_before=None,
+    smart_after=None,
+    delta=None,
+    bb_count: int = 0,
+    snapshot: DiskSnapshot | None = None,
+    classification: ClassificationResult | None = None,
 ) -> OperationResult:
-    snapshot = DiskSnapshot(
-        disk_info=disk_info, smart_before=smart_before,
-        smart_after=smart_after, smart_delta=delta,
-        badblocks_count=bb_count, badblocks_raw_output="",
-    )
-    if not success:
-        failed_step = None
-        for s in steps:
-            if s.status in (StepStatus.FAILED, StepStatus.SKIPPED):
-                failed_step = s
-                break
-        reason = f"Pipeline failed at: {failed_step.name}" if failed_step else "Validation did not complete successfully"
-        classification = ClassificationResult(
-            classification=Classification.FAILED,
-            reasons=[reason],
-            recommendation="Not recommended for use — validation could not be completed.",
+    if snapshot is None:
+        snapshot = DiskSnapshot(
+            disk_info=disk_info, smart_before=smart_before,
+            smart_after=smart_after, smart_delta=delta,
+            badblocks_count=bb_count,
         )
-    else:
-        classification = classify(snapshot)
+    if classification is None:
+        if not success:
+            failed_step = None
+            for s in steps:
+                if s.status in (StepStatus.FAILED, StepStatus.SKIPPED):
+                    failed_step = s
+                    break
+            reason = f"Pipeline failed at: {failed_step.name}" if failed_step else "Validation did not complete successfully"
+            classification = ClassificationResult(
+                classification=Classification.FAILED,
+                reasons=[reason],
+                recommendation="Not recommended for use — validation could not be completed.",
+            )
+        else:
+            classification = classify(snapshot)
     return OperationResult(
         success=success, cancelled=cancelled, steps=steps,
         snapshot=snapshot, classification=classification,

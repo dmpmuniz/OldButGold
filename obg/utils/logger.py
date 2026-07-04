@@ -1,24 +1,28 @@
 from __future__ import annotations
+import logging
 import os
 import sys
 import time
 import traceback
-import threading
 from pathlib import Path
 from datetime import datetime
 
-
 _LOG_FILE: Path | None = None
-_LOCK = threading.Lock()
-_ENABLED = True
+_LOGGER = logging.getLogger("obg")
+_HANDLER: logging.Handler | None = None
 _ORIGINAL_EXCEPTHOOK: object | None = None
 
 
 def setup() -> Path:
-    global _LOG_FILE, _ORIGINAL_EXCEPTHOOK
+    global _LOG_FILE, _HANDLER, _ORIGINAL_EXCEPTHOOK
     ts = time.strftime("%Y%m%d_%H%M%S")
     log_dir = Path(os.getcwd())
     _LOG_FILE = log_dir / f"obg_{ts}.log"
+
+    _HANDLER = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+    _HANDLER.setFormatter(logging.Formatter("%(message)s"))
+    _LOGGER.setLevel(logging.DEBUG)
+    _LOGGER.addHandler(_HANDLER)
 
     _write_raw("=" * 70)
     from obg import __version__
@@ -41,7 +45,7 @@ def setup() -> Path:
 
 
 def close() -> None:
-    global _ORIGINAL_EXCEPTHOOK, _LOG_FILE
+    global _ORIGINAL_EXCEPTHOOK, _HANDLER, _LOG_FILE
     if _LOG_FILE is None:
         return
     _write_raw("=" * 70)
@@ -50,17 +54,17 @@ def close() -> None:
     if _ORIGINAL_EXCEPTHOOK:
         sys.excepthook = _ORIGINAL_EXCEPTHOOK
         _ORIGINAL_EXCEPTHOOK = None
+    if _HANDLER:
+        _LOGGER.removeHandler(_HANDLER)
+        _HANDLER.close()
+        _HANDLER = None
     _LOG_FILE = None
 
 
 def _write_raw(line: str) -> None:
-    if not _ENABLED or not _LOG_FILE:
+    if _LOG_FILE is None:
         return
-    try:
-        with open(_LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except OSError:
-        pass
+    _LOGGER.debug(line)
 
 
 def _fmt(level: str, tag: str, msg: str) -> str:
@@ -69,8 +73,7 @@ def _fmt(level: str, tag: str, msg: str) -> str:
 
 
 def write(level: str, tag: str, msg: str) -> None:
-    with _LOCK:
-        _write_raw(_fmt(level, tag, msg))
+    _LOGGER.info(_fmt(level, tag, msg))
 
 
 def info(tag: str, msg: str) -> None:
@@ -85,8 +88,7 @@ def error(tag: str, msg: str) -> None:
     write("ERROR", tag, msg)
     tb = traceback.format_exc().strip()
     if tb and tb != "NoneType: None":
-        with _LOCK:
-            _write_raw(tb)
+        _LOGGER.debug(tb)
 
 
 def debug(tag: str, msg: str) -> None:
@@ -94,12 +96,11 @@ def debug(tag: str, msg: str) -> None:
 
 
 def _unhandled_exception(exc_type, exc_value, exc_tb) -> None:
-    with _LOCK:
-        _write_raw("")
-        _write_raw("!" * 70)
-        _write_raw(f"  UNHANDLED EXCEPTION: {exc_type.__name__}: {exc_value}")
-        _write_raw("  Traceback:")
-        for line in traceback.format_tb(exc_tb):
-            _write_raw(f"    {line.rstrip()}")
-        _write_raw("!" * 70)
+    _LOGGER.debug("")
+    _LOGGER.debug("!" * 70)
+    _LOGGER.debug(f"  UNHANDLED EXCEPTION: {exc_type.__name__}: {exc_value}")
+    _LOGGER.debug("  Traceback:")
+    for line in traceback.format_tb(exc_tb):
+        _LOGGER.debug(f"    {line.rstrip()}")
+    _LOGGER.debug("!" * 70)
     sys.__excepthook__(exc_type, exc_value, exc_tb)

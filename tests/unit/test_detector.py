@@ -11,22 +11,19 @@ MOCK_LSBLK = {
             "name": "sdb", "size": 2000398934016, "type": "disk",
             "mountpoint": None, "fstype": "ntfs",
             "model": "WD Elements 25A3", "serial": "WX41A19XXXXX",
-            "tran": "usb", "rota": True, "phy-sec": 4096, "log-sec": 512,
-            "min-io": 4096, "opt-io": 33553920, "alignment": 0
+            "tran": "usb", "rota": True, "phy-sec": 4096, "log-sec": 512
         },
         {
             "name": "sdc", "size": 500107862016, "type": "disk",
             "mountpoint": None, "fstype": None,
             "model": "Samsung SSD 860", "serial": "S3Z9NB0K123456",
-            "tran": "sata", "rota": False, "phy-sec": 512, "log-sec": 512,
-            "min-io": 512, "opt-io": 0, "alignment": 0
+            "tran": "sata", "rota": False, "phy-sec": 512, "log-sec": 512
         },
         {
             "name": "nvme0n1", "size": 1000204886016, "type": "disk",
             "mountpoint": None, "fstype": None,
             "model": "Samsung NVMe SSD", "serial": "NVME123",
-            "tran": "nvme", "rota": False, "phy-sec": 512, "log-sec": 512,
-            "min-io": 512, "opt-io": 0, "alignment": 0
+            "tran": "nvme", "rota": False, "phy-sec": 512, "log-sec": 512
         },
     ]
 }
@@ -82,8 +79,7 @@ def test_filter_boot_disk(mock_run):
                 "name": "sda", "size": 500107862016, "type": "disk",
                 "mountpoint": None, "fstype": "ext4",
                 "model": "Boot Disk", "serial": "BOOT123",
-                "tran": "sata", "rota": True, "phy-sec": 512, "log-sec": 512,
-                "min-io": 512, "opt-io": 0, "alignment": 0
+                "tran": "sata", "rota": True, "phy-sec": 512, "log-sec": 512
             }
         ]
     }

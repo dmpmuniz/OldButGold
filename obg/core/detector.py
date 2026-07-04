@@ -68,16 +68,13 @@ def _parse_capacity_human(size_bytes: int) -> str:
 
 
 def _is_unsupported(dev: dict) -> bool:
-    rota = dev.get("rota", False)
-    if rota is True or rota == 1 or rota == "1":
-        return False
-    return True
+    return not bool(dev.get("rota", False))
 
 
 def list_disks() -> list[DiskInfo]:
     cmd = [
         "lsblk", "-J", "-b", "-o",
-        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,REV,TRAN,ROTA,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,ALIGNMENT,PTTYPE",
+        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,REV,TRAN,ROTA,PHY-SEC,LOG-SEC,PTTYPE",
     ]
     result = run(cmd)
     if result.returncode != 0:
@@ -118,10 +115,6 @@ def list_disks() -> list[DiskInfo]:
             transport=transport,
             logical_sector=dev.get("log-sec", 512),
             physical_sector=dev.get("phy-sec", 512),
-            min_io=dev.get("min-io", 512),
-            optimal_io=dev.get("opt-io", 0),
-            alignment_offset=dev.get("alignment", 0),
-            rpm=None,
             smart_supported=_check_smart(f"/dev/{name}"),
             uas_enabled=(transport == "usb-uas"),
             current_fs=dev.get("fstype"),

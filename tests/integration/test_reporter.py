@@ -16,7 +16,6 @@ def _make_info():
         device="/dev/sdb", model="WD Elements 25A3", serial="WX41A19TEST",
         firmware="1028", capacity_bytes=2000398934016, capacity_human="2.0 TB",
         interface="usb", transport="usb-uas", logical_sector=512, physical_sector=4096,
-        min_io=4096, optimal_io=33553920, alignment_offset=0, rpm=5400,
         smart_supported=True, uas_enabled=True,
         current_fs="ntfs", partition_table="gpt",
         is_mounted=False, is_boot_disk=False,
@@ -38,7 +37,7 @@ def _make_snapshot(smart_before=None, smart_after=None, delta=None, bb=0):
     return DiskSnapshot(
         disk_info=_make_info(), smart_before=smart_before,
         smart_after=smart_after, smart_delta=delta,
-        badblocks_count=bb, badblocks_raw_output="",
+        badblocks_count=bb,
     )
 
 

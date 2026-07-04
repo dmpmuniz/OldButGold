@@ -54,32 +54,26 @@ def find_session(disk: DiskInfo) -> dict | None:
         return None
 
 
-def update_stage(disk: DiskInfo, stage: str) -> None:
+def _session_update(disk: DiskInfo, **kwargs) -> None:
     path = _session_path(disk.serial)
     if not path.exists():
         return
     try:
         with open(path) as f:
             data = json.load(f)
-        data["current_stage"] = stage
+        data.update(kwargs)
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
     except (OSError, json.JSONDecodeError):
         pass
+
+
+def update_stage(disk: DiskInfo, stage: str) -> None:
+    _session_update(disk, current_stage=stage)
 
 
 def update_checkpoint(disk: DiskInfo, offset: float) -> None:
-    path = _session_path(disk.serial)
-    if not path.exists():
-        return
-    try:
-        with open(path) as f:
-            data = json.load(f)
-        data["badblocks_offset"] = offset
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
-    except (OSError, json.JSONDecodeError):
-        pass
+    _session_update(disk, badblocks_offset=offset)
 
 
 def complete_session(disk: DiskInfo) -> None:

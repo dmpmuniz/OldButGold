@@ -32,21 +32,22 @@ def run_badblocks(
         command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(limit), "0"]
         on_output(f"TEST MODE: testing {limit} of {total_blocks} blocks (~1%)")
 
-    last_checkpoint = -1
-    def _on_line(line: str) -> None:
-        nonlocal last_checkpoint
-        on_output(line)
-        if on_checkpoint and "%" in line:
-            try:
-                pct = float(line.split("%")[0].strip())
-                bucket = int(pct // 10) * 10
-                if bucket > last_checkpoint:
-                    last_checkpoint = bucket
-                    on_checkpoint(pct)
-            except (ValueError, IndexError):
-                pass
+    last_checkpoint = [-1]
+    def _line_handler(offset_base=0):
+        def handler(line: str) -> None:
+            on_output(line)
+            if on_checkpoint and "%" in line:
+                try:
+                    pct = float(line.split("%")[0].strip())
+                    bucket = int(pct // 10) * 10
+                    if bucket > last_checkpoint[0]:
+                        last_checkpoint[0] = bucket
+                        on_checkpoint(offset_base + pct)
+                except (ValueError, IndexError):
+                    pass
+        return handler
 
-    result = run(command, on_output=_on_line)
+    result = run(command, on_output=_line_handler())
     output = result.stdout + result.stderr
     bad_count = 0
     for line in output.splitlines():
@@ -63,20 +64,8 @@ def run_badblocks(
     if profile == "extended" and bad_count == 0:
         on_output("Extended profile: running additional read-only verification pass")
         read_cmd = ["badblocks", "-n", "-s", "-v", device]
-        last_checkpoint_read = -1
-        def _on_read_line(line: str) -> None:
-            nonlocal last_checkpoint_read
-            on_output(line)
-            if on_checkpoint and "%" in line:
-                try:
-                    pct = float(line.split("%")[0].strip())
-                    bucket = int(pct // 10) * 10
-                    if bucket > last_checkpoint_read:
-                        last_checkpoint_read = bucket
-                        on_checkpoint(100 + pct)
-                except (ValueError, IndexError):
-                    pass
-        read_result = run(read_cmd, on_output=_on_read_line)
+        last_checkpoint[0] = -1
+        read_result = run(read_cmd, on_output=_line_handler(offset_base=100))
         read_output = read_result.stdout + read_result.stderr
         for line in read_output.splitlines():
             if "bad blocks found" in line.lower():

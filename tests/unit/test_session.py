@@ -19,7 +19,6 @@ def disk():
         device="/dev/sdb", model="TestDrive", serial="SN12345", firmware="FW1.0",
         capacity_bytes=1000000000, capacity_human="1 GB",
         interface="usb", transport="usb-uas", logical_sector=512, physical_sector=4096,
-        min_io=4096, optimal_io=0, alignment_offset=0, rpm=5400,
         smart_supported=True, uas_enabled=True,
         current_fs=None, partition_table=None,
         is_mounted=False, is_boot_disk=False,

@@ -15,10 +15,6 @@ class DiskInfo:
     transport: str
     logical_sector: int
     physical_sector: int
-    min_io: int
-    optimal_io: int
-    alignment_offset: int
-    rpm: int | None
     smart_supported: bool
     uas_enabled: bool
     current_fs: str | None
@@ -59,4 +55,3 @@ class DiskSnapshot:
     smart_after: SmartData | None
     smart_delta: SmartDelta | None
     badblocks_count: int
-    badblocks_raw_output: str
