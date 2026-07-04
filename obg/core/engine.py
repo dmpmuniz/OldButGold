@@ -114,7 +114,7 @@ def run_pipeline(
 
         # Step 3: SMART Short Self-Test
         def _short_test():
-            ok = run_short_test(device)
+            ok = run_short_test(device, on_output=on_output)
             if not ok:
                 raise RuntimeError("SMART Short Self-Test did not complete successfully")
         _run("SMART Short Self-Test", _short_test, fatal=False)

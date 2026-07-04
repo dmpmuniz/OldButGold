@@ -70,11 +70,11 @@ def read_smart(device: str) -> SmartData | None:
     )
 
 
-def run_short_test(device: str) -> bool:
+def run_short_test(device: str, on_output: Callable[[str], None] | None = None) -> bool:
     result = run(["smartctl", "-t", "short", device])
     if result.returncode not in (0, 2):
         return False
-    return poll_smart_test(device, timeout_seconds=300, on_output=None)
+    return poll_smart_test(device, timeout_seconds=300, on_output=on_output)
 
 
 def poll_smart_test(
@@ -101,6 +101,6 @@ def poll_smart_test(
                     continue
         pct_match = re.search(r"(\d+)% of test remaining", output)
         if pct_match and on_output:
-            on_output(f"{pct_match.group(1)}% remaining")
+            on_output(f"SMART test: {100 - int(pct_match.group(1))}% complete")
         time.sleep(60)
     return False

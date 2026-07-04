@@ -25,7 +25,7 @@ def main() -> None:
             sys.exit(1)
 
     if test_mode:
-        logger.info("MAIN", "TEST MODE — Badblocks will scan ~2% of disk")
+        logger.info("MAIN", "TEST MODE — Badblocks will scan ~1% of disk")
 
     # Privilege escalation via pkexec
     if os.geteuid() != 0:

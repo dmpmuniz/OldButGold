@@ -614,19 +614,25 @@ class ExecutionScreen(Screen):
         self.config = config
         self.resume = resume
         self._step_widgets: dict[str, Static] = {}
-        self._output_lines: list[str] = []
         self._start_time = time.monotonic()
         self._cancelled = False
         self._done = False
         self._bb_progress = 0.0
-        self._bb_progress_start = 0.0
         self._bb_eta = ""
-        self._bb_operation = ""
-        self._bb_pattern = ""
+        self._bb_operation = "Preparing..."
+        self._bb_pattern = "—"
+        self._bb_elapsed_str = "—"
         self._bb_speed = 0.0
         self._bb_errors = (0, 0, 0)
+        self._bb_bad_count = 0
+        self._bb_test_mode = False
         self._last_pct_time = 0.0
         self._last_pct = 0.0
+        self._bb_blocksize = 1024
+        if disk.capacity_bytes:
+            self._bb_total_blocks = disk.capacity_bytes // self._bb_blocksize
+        else:
+            self._bb_total_blocks = 0
 
     def compose(self) -> ComposeResult:
         mode = "  [TEST MODE]" if self.app.test_mode else ""
@@ -644,12 +650,11 @@ class ExecutionScreen(Screen):
                         yield Static("  Progress", classes="group-title")
                         yield ProgressBar(total=100, id="bb-progress", show_eta=False)
                         yield Static("", id="progress-info", classes="progress-info")
-                        yield Static("  Output", classes="group-title")
-                        yield Static("", id="live-output")
             yield Static("  [C] Cancel  —  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._tick)
+        self._update_progress()
         self._run()
 
     def on_key(self, event) -> None:
@@ -689,22 +694,25 @@ class ExecutionScreen(Screen):
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
-        if "% done" not in line:
-            self._output_lines.append(line)
-            if len(self._output_lines) > 200:
-                self._output_lines = self._output_lines[-200:]
-            try:
-                self.query_one("#live-output").update("\n".join(self._output_lines[-20:]))
-            except Exception:
-                pass
-        m = re.search(r'Testing with pattern (\S+):\s+([\d.]+)% done,\s+([\d:]+) elapsed', line)
-        if m:
-            self._bb_pattern = m.group(1)
-            self._bb_operation = f"Testing {self._bb_pattern}"
+        if "TEST MODE" in line:
+            self._bb_test_mode = True
+            self._bb_operation = line.strip()
+            self._update_progress()
+            return
+        if "RESUME" in line and "resuming from" in line:
+            self._update_progress()
+            return
+        pm = re.search(r'(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed', line)
+            pat = pm.group(1)
+            if pat:
+                self._bb_pattern = pat
+                self._bb_operation = f"Writing pattern {pat}"
+            else:
+                self._bb_operation = "Reading (non-destructive)"
             now = time.monotonic()
-            pct = float(m.group(2))
+            pct = float(pm.group(2))
             self._bb_progress = pct
-            self._bb_elapsed_str = m.group(3)
+            self._bb_elapsed_str = pm.group(3)
             em = re.search(r'\((\d+)/(\d+)/(\d+)\)', line)
             if em:
                 self._bb_errors = (int(em.group(1)), int(em.group(2)), int(em.group(3)))
@@ -722,20 +730,37 @@ class ExecutionScreen(Screen):
                 self._last_pct = pct
                 self._last_pct_time = now
             self._update_progress()
+        if line.strip().isdigit():
+            self._bb_bad_count += 1
+            self._update_progress()
+        bm = re.search(r'(\d+),\s+(\d+)\s+bad\s+blocks?\s+found', line)
+        if bm:
+            self._bb_bad_count = int(bm.group(2))
 
     def _update_progress(self) -> None:
         try:
             self.query_one("#bb-progress", ProgressBar).update(progress=self._bb_progress)
         except Exception:
             pass
-        info = f"  Pattern: {self._bb_pattern}  |  {self._bb_progress:.1f}%"
-        if self._bb_eta:
-            info += f"  |  ETA: {self._bb_eta}"
-        if self._bb_speed > 0:
-            info += f"  |  {self._bb_speed:.1f} MB/s"
+        pct = self._bb_progress
+        total = self._bb_total_blocks
+        cur_block = int(total * pct / 100) if total > 0 else 0
+        cur_sector = cur_block * (self._bb_blocksize // 512)
         r, w, c = self._bb_errors
-        if r > 0 or w > 0 or c > 0:
-            info += f"  |  Bad: {r}/{w}/{c} (R/W/C)"
+        hdr = "  [TEST MODE]" if self._bb_test_mode else ""
+        lines = [
+            f"  {self._bb_operation}{hdr}",
+            f"  Pattern:   {self._bb_pattern}",
+            f"  Progress:  {pct:.1f}%",
+            f"  Block:     {cur_block:,} / {total:,}",
+            f"  Sector:    {cur_sector:,}",
+            f"  Speed:     {self._bb_speed:.1f} MB/s" if self._bb_speed > 0 else "  Speed:     —",
+            f"  Elapsed:   {self._bb_elapsed_str}",
+            f"  ETA:       {self._bb_eta}" if self._bb_eta else "  ETA:       —",
+            f"  Bad:       Found {self._bb_bad_count:,}" if self._bb_bad_count > 0 else f"  Bad:       {self._bb_bad_count}",
+            f"  Errors:    {r}/{w}/{c} (R/W/C)" if r > 0 or w > 0 or c > 0 else None,
+        ]
+        info = "\n".join(l for l in lines if l is not None)
         try:
             self.query_one("#progress-info").update(info)
         except Exception:

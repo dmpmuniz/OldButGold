@@ -70,14 +70,34 @@ def run(
             stdin=subprocess.PIPE if input_data else None,
             env=env,
             preexec_fn=os.setsid,
-            text=True,
         )
+        buf = b""
         lines = []
-        for raw_line in proc.stdout:
-            line = raw_line.rstrip("\r\n")
-            if line:
-                lines.append(line)
-                on_output(line)
+        fd = proc.stdout.fileno()
+        while True:
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf or b"\r" in buf:
+                idx = -1
+                nidx = buf.find(b"\n")
+                ridx = buf.find(b"\r")
+                if nidx >= 0 and (ridx < 0 or nidx < ridx):
+                    idx = nidx
+                elif ridx >= 0 and (nidx < 0 or ridx < nidx):
+                    idx = ridx
+                if idx < 0:
+                    break
+                part = buf[:idx].decode("utf-8", errors="replace").rstrip("\r\n")
+                if part:
+                    lines.append(part)
+                    on_output(part)
+                buf = buf[idx + 1:]
+        remaining = buf.decode("utf-8", errors="replace").strip()
+        if remaining:
+            lines.append(remaining)
+            on_output(remaining)
         proc.wait()
         duration = time.monotonic() - start
         logger.debug("CMD", f"  -> rc={proc.returncode} duration={duration:.1f}s")
