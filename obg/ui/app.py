@@ -703,6 +703,7 @@ class ExecutionScreen(Screen):
             self._update_progress()
             return
         pm = re.search(r'(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed', line)
+        if pm:
             pat = pm.group(1)
             if pat:
                 self._bb_pattern = pat

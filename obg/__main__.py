@@ -2,12 +2,13 @@
 """OldButGold — HDD Revival Toolkit for Linux."""
 import os
 import sys
+import shutil
+from obg import __version__
+from obg.ui.app import ObgApp
+from obg.utils import logger
 
 
 def main() -> None:
-    from obg import __version__
-    from obg.ui.app import ObgApp
-    from obg.utils import logger
     logger.setup()
     logger.info("MAIN", "OldButGold started")
 
@@ -31,7 +32,6 @@ def main() -> None:
     if os.geteuid() != 0:
         binary = os.path.abspath(sys.argv[0])
         if not sys.stdout.isatty():
-            import shutil
             for term_cmd in ("ptyxis", "gnome-terminal"):
                 term = shutil.which(term_cmd)
                 if term:
