@@ -83,6 +83,9 @@ def poll_smart_test(
     on_output: Callable[[str], None] | None,
 ) -> bool:
     deadline = time.monotonic() + timeout_seconds
+    poll_interval = 5
+    start_time = time.monotonic()
+    last_pct = 0
     while time.monotonic() < deadline:
         result = run(["smartctl", "-a", device])
         if result.returncode not in (0, 2):
@@ -97,10 +100,19 @@ def poll_smart_test(
                 if code == 0:
                     return True
                 if code >= 249:
-                    time.sleep(60)
+                    time.sleep(poll_interval)
                     continue
         pct_match = re.search(r"(\d+)% of test remaining", output)
         if pct_match and on_output:
-            on_output(f"SMART test: {100 - int(pct_match.group(1))}% complete")
-        time.sleep(60)
+            pct = 100 - int(pct_match.group(1))
+            elapsed = time.monotonic() - start_time
+            if pct > last_pct and pct > 0:
+                rate = pct / elapsed
+                eta_s = (100 - pct) / rate if rate > 0 else 0
+                eta_str = f", ETA {int(eta_s // 60)}m{int(eta_s % 60):02d}s" if eta_s < 3600 else ""
+                last_pct = pct
+            else:
+                eta_str = ""
+            on_output(f"SMART test: {pct}% complete{eta_str}")
+        time.sleep(poll_interval)
     return False

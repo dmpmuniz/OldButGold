@@ -351,7 +351,7 @@ class SmartTestScreen(Screen):
     def _run_test(self) -> None:
         try:
             self.app.call_from_thread(self._set_status, "  Running short test...")
-            run_short_test(self.disk.device)
+            run_short_test(self.disk.device, on_output=lambda msg: self.app.call_from_thread(self._set_status, f"  {msg}"))
             self.app.call_from_thread(self._set_status, "  Collecting SMART data...")
             sd = read_smart(self.disk.device)
             self.app.call_from_thread(self._done, sd)
@@ -607,7 +607,19 @@ class FinalConfirmationScreen(Screen):
         self.app.push_screen(ExecutionScreen(self.disk, self.config, resume=self.resume))
 
 
-class ExecutionScreen(Screen):
+    STEP_DESCRIPTIONS = {
+        "Drive Identification": "Verifying device identity and accessibility...\nChecking that the expected drive is present and reachable.",
+        "Initial Health Check": "Running SMART short self-test...\nThe drive firmware performs an internal diagnostic scan.\nEstimated duration: up to 2 minutes.",
+        "Surface Validation": "Scanning the entire disk surface for bad sectors.\nThis is the longest step and may take hours depending on disk size and speed.",
+        "Final Health Check": "Re-reading SMART attributes after surface validation...\nChecking for any changes in drive health metrics.",
+        "Compare Results": "Comparing SMART snapshots taken before and after validation...\nDetecting changes caused by the validation process.",
+        "Prepare Disk": "Creating a new GPT partition table...",
+        "Create Partition": "Creating a primary partition spanning the full disk capacity...",
+        "Format Filesystem": "Formatting the partition with the selected filesystem...",
+        "Generate Report": "Compiling validation data and generating the final report...",
+        "Session Cleanup": "Cleaning up temporary session data...",
+    }
+
     def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
@@ -619,7 +631,7 @@ class ExecutionScreen(Screen):
         self._done = False
         self._bb_progress = 0.0
         self._bb_eta = ""
-        self._bb_operation = "Preparing..."
+        self._bb_operation = ""
         self._bb_pattern = "—"
         self._bb_elapsed_str = "—"
         self._bb_speed = 0.0
@@ -629,6 +641,7 @@ class ExecutionScreen(Screen):
         self._last_pct_time = 0.0
         self._last_pct = 0.0
         self._bb_blocksize = 1024
+        self._current_step = ""
         if disk.capacity_bytes:
             self._bb_total_blocks = disk.capacity_bytes // self._bb_blocksize
         else:
@@ -676,9 +689,9 @@ class ExecutionScreen(Screen):
 
     def _update_step(self, name: str, status: StepStatus) -> None:
         icons = {
-            StepStatus.RUNNING: ("[>]", "step-running"),
-            StepStatus.OK: ("[x]", "step-ok"),
-            StepStatus.FAILED: ("[!]", "step-failed"),
+            StepStatus.RUNNING: ("[\u25b6]", "step-running"),
+            StepStatus.OK: ("[\u2713]", "step-ok"),
+            StepStatus.FAILED: ("[\u2717]", "step-failed"),
             StepStatus.SKIPPED: ("[-]", "step-skipped"),
             StepStatus.CANCELLED: ("[/]", "step-skipped"),
             StepStatus.PENDING: ("[ ]", "step-pending"),
@@ -689,6 +702,22 @@ class ExecutionScreen(Screen):
             w.update(f"  {icon}  {name}")
             w.remove_class("step-pending", "step-running", "step-ok", "step-failed", "step-skipped")
             w.add_class(css)
+        if status == StepStatus.RUNNING:
+            self._current_step = name
+            self._show_step_info(name)
+
+    def _show_step_info(self, name: str) -> None:
+        desc = self.STEP_DESCRIPTIONS.get(name, name)
+        self._bb_operation = name
+        self._bb_progress = 0
+        self._bb_eta = ""
+        self._bb_speed = 0
+        self._bb_errors = (0, 0, 0)
+        try:
+            self.query_one("#bb-progress", ProgressBar).update(progress=0)
+            self.query_one("#progress-info").update(f"  {desc}")
+        except Exception:
+            pass
 
     def _on_output(self, line: str) -> None:
         self.app.call_from_thread(self._append, line)
@@ -702,19 +731,43 @@ class ExecutionScreen(Screen):
         if "RESUME" in line and "resuming from" in line:
             self._update_progress()
             return
+        if "read-only verification pass" in line:
+            self._bb_operation = "Reading (non-destructive)"
+            self._bb_pattern = "—"
+            self._update_progress()
+            return
+        if line.startswith("Compare Results:"):
+            self._bb_operation = "Compare Results"
+            self._bb_progress = 100
+            self._update_progress()
+            try:
+                self.query_one("#progress-info").update(line.replace("Compare Results:\n", "  ").replace("\n", "\n  "))
+            except Exception:
+                pass
+            return
+        sm = re.search(r'SMART test:\s*(\d+)% complete.*?(?:ETA\s+(\d+)m(\d+)s)?', line)
+        if sm:
+            pct = int(sm.group(1))
+            self._bb_progress = float(pct)
+            self._bb_operation = "SMART Short Self-Test"
+            self._bb_pattern = "—"
+            if sm.group(2):
+                self._bb_eta = f"{sm.group(2)}m{sm.group(3)}s"
+            self._update_progress()
+            return
         pm = re.search(r'(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed', line)
         if pm:
             pat = pm.group(1)
             if pat:
                 self._bb_pattern = pat
                 self._bb_operation = f"Writing pattern {pat}"
-            else:
-                self._bb_operation = "Reading (non-destructive)"
+            elif self._bb_operation in ("Preparing...", "SMART Short Self-Test", "Reading (non-destructive)"):
+                self._bb_operation = "Writing (destructive)"
             now = time.monotonic()
             pct = float(pm.group(2))
             self._bb_progress = pct
             self._bb_elapsed_str = pm.group(3)
-            em = re.search(r'\((\d+)/(\d+)/(\d+)\)', line)
+            em = re.search(r'\((\d+)/(\d+)/(\d+)\s*errors?\)', line)
             if em:
                 self._bb_errors = (int(em.group(1)), int(em.group(2)), int(em.group(3)))
             if pct > self._last_pct:
@@ -731,9 +784,11 @@ class ExecutionScreen(Screen):
                 self._last_pct = pct
                 self._last_pct_time = now
             self._update_progress()
+            return
         if line.strip().isdigit():
             self._bb_bad_count += 1
             self._update_progress()
+            return
         bm = re.search(r'(\d+),\s+(\d+)\s+bad\s+blocks?\s+found', line)
         if bm:
             self._bb_bad_count = int(bm.group(2))
@@ -749,18 +804,22 @@ class ExecutionScreen(Screen):
         cur_sector = cur_block * (self._bb_blocksize // 512)
         r, w, c = self._bb_errors
         hdr = "  [TEST MODE]" if self._bb_test_mode else ""
-        lines = [
-            f"  {self._bb_operation}{hdr}",
-            f"  Pattern:   {self._bb_pattern}",
-            f"  Progress:  {pct:.1f}%",
-            f"  Block:     {cur_block:,} / {total:,}",
-            f"  Sector:    {cur_sector:,}",
-            f"  Speed:     {self._bb_speed:.1f} MB/s" if self._bb_speed > 0 else "  Speed:     —",
-            f"  Elapsed:   {self._bb_elapsed_str}",
-            f"  ETA:       {self._bb_eta}" if self._bb_eta else "  ETA:       —",
-            f"  Bad:       Found {self._bb_bad_count:,}" if self._bb_bad_count > 0 else f"  Bad:       {self._bb_bad_count}",
-            f"  Errors:    {r}/{w}/{c} (R/W/C)" if r > 0 or w > 0 or c > 0 else None,
-        ]
+        is_badblocks = any(kw in self._bb_operation for kw in ("Writing", "Reading", "pattern"))
+        lines = [f"  {self._bb_operation}{hdr}"]
+        if is_badblocks:
+            lines += [
+                f"  Pattern:   {self._bb_pattern}",
+                f"  Progress:  {pct:.1f}%",
+                f"  Block:     {cur_block:,} / {total:,}",
+                f"  Sector:    {cur_sector:,}",
+                f"  Speed:     {self._bb_speed:.1f} MB/s" if self._bb_speed > 0 else "  Speed:     —",
+                f"  Elapsed:   {self._bb_elapsed_str}",
+                f"  ETA:       {self._bb_eta}" if self._bb_eta else "  ETA:       —",
+                f"  Bad:       Found {self._bb_bad_count:,}" if self._bb_bad_count > 0 else f"  Bad:       {self._bb_bad_count}",
+                f"  Errors:    {r}/{w}/{c} (R/W/C)" if r > 0 or w > 0 or c > 0 else None,
+            ]
+        elif pct > 0:
+            lines.append(f"  Progress:  {pct:.0f}%")
         info = "\n".join(l for l in lines if l is not None)
         try:
             self.query_one("#progress-info").update(info)

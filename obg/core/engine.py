@@ -20,13 +20,11 @@ from obg.core.session import create_session, find_session, update_checkpoint, up
 
 STEPS = [
     "Drive Identification",
-    "Initial SMART Collection",
-    "SMART Short Self-Test",
-    "SMART Re-Collection",
-    "Badblocks Validation",
-    "Final SMART Collection",
-    "SMART Comparison",
-    "Create GPT",
+    "Initial Health Check",
+    "Surface Validation",
+    "Final Health Check",
+    "Compare Results",
+    "Prepare Disk",
     "Create Partition",
     "Format Filesystem",
     "Generate Report",
@@ -106,27 +104,17 @@ def run_pipeline(
         if not _run("Drive Identification", _identify):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 2: Initial SMART Collection
-        def _init_smart():
+        # Step 2: Initial Health Check
+        def _initial_health():
             nonlocal smart_before
             smart_before = read_smart(device)
-        _run("Initial SMART Collection", _init_smart, fatal=False)
-
-        # Step 3: SMART Short Self-Test
-        def _short_test():
             ok = run_short_test(device, on_output=on_output)
             if not ok:
-                raise RuntimeError("SMART Short Self-Test did not complete successfully")
-        _run("SMART Short Self-Test", _short_test, fatal=False)
+                on_output("SMART short test did not complete, continuing with available data")
+        _run("Initial Health Check", _initial_health, fatal=False)
 
-        # Step 4: SMART Re-Collection
-        def _recollect():
-            nonlocal smart_after
-            smart_after = read_smart(device)
-        _run("SMART Re-Collection", _recollect, fatal=False)
-
-        # Step 5: Badblocks Validation
-        def _badblocks():
+        # Step 3: Surface Validation
+        def _surface():
             nonlocal bb_count
             resume_offset = 0
             if resume:
@@ -146,13 +134,16 @@ def run_pipeline(
                 test_mode=test_mode, profile=profile, resume_offset=resume_offset,
             )
             update_stage(disk_info, "Post Validation")
-        if not _run("Badblocks Validation", _badblocks):
+        if not _run("Surface Validation", _surface):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 6: Final SMART Collection
-        _run("Final SMART Collection", lambda: read_smart(device), fatal=False)
+        # Step 4: Final Health Check
+        def _final_health():
+            nonlocal smart_after
+            smart_after = read_smart(device)
+        _run("Final Health Check", _final_health, fatal=False)
 
-        # Step 7: SMART Comparison
+        # Step 5: Compare Results
         def _compare():
             nonlocal delta
             if smart_before and smart_after:
@@ -164,24 +155,25 @@ def run_pipeline(
                     temperature=(smart_after.temperature - smart_before.temperature)
                         if smart_after.temperature is not None and smart_before.temperature is not None else None,
                 )
-        _run("SMART Comparison", _compare, fatal=False)
+                on_output("Compare Results:\n" + _format_delta(delta))
+        _run("Compare Results", _compare, fatal=False)
 
-        # Step 8: Create GPT
-        if not _run("Create GPT", lambda: create_gpt(device)):
+        # Step 6: Prepare Disk
+        if not _run("Prepare Disk", lambda: create_gpt(device)):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 9: Create Partition
+        # Step 7: Create Partition
         def _part():
             nonlocal partition
             partition = create_partition(device)
         if not _run("Create Partition", _part):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 10: Format Filesystem
+        # Step 8: Format Filesystem
         if not _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output)):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 11: Generate Report
+        # Step 9: Generate Report
         def _report():
             nonlocal snapshot, classification, report_path
             snapshot = DiskSnapshot(
@@ -201,7 +193,7 @@ def run_pipeline(
             report_path = generate_report(report_data)
         _run("Generate Report", _report, fatal=False)
 
-        # Step 12: Session Cleanup
+        # Step 10: Session Cleanup
         sr = _run_step("Session Cleanup")
         step_results.append(sr)
         if not resume:
@@ -257,3 +249,23 @@ def _build_result(
         report_path=report_path,
         total_duration_seconds=time.monotonic() - start_time,
     )
+
+
+def _format_delta(delta: SmartDelta) -> str:
+    lines = []
+    for label, val in [
+        ("Reallocated Sectors", delta.reallocated),
+        ("Pending Sectors", delta.pending),
+        ("Uncorrectable Sectors", delta.uncorrectable),
+        ("CRC Errors", delta.crc_errors),
+    ]:
+        if val > 0:
+            lines.append(f"  {label}: +{val}")
+        elif val < 0:
+            lines.append(f"  {label}: {val}")
+        else:
+            lines.append(f"  {label}: unchanged")
+    if delta.temperature is not None:
+        t = delta.temperature
+        lines.append(f"  Temperature: {'+' if t >= 0 else ''}{t}°C")
+    return "\n".join(lines)
