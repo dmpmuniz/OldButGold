@@ -954,7 +954,7 @@ class CompleteScreen(Screen):
                 pass
 
     def _go_another(self) -> None:
-        while len(self.app.screen_stack) > 1:
+        while len(self.app.screen_stack) > 2:
             try:
                 self.app.pop_screen()
             except Exception:
