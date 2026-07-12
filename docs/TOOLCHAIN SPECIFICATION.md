@@ -116,9 +116,7 @@ Current required utilities are:
 smartctl
 badblocks
 lsblk
-blkid
-findmnt
-wipefs
+blockdev
 sgdisk
 partprobe
 mkfs.ext4

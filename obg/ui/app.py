@@ -221,6 +221,8 @@ class DriveSelectionScreen(Screen):
             if disk.is_supported:
                 selected = i == self._selected
                 lines = [f"  {disk.model}", f"  {disk.device}  {disk.transport}  {disk.capacity_human}"]
+                if disk.is_mounted or disk.is_boot_disk:
+                    lines.append(f"  ! WARNING: Drive contains active filesystem — all data will be destroyed !")
                 session = find_session(disk)
                 if session:
                     total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
@@ -228,7 +230,7 @@ class DriveSelectionScreen(Screen):
                     lines.append(f"  ! Interrupted Validation  -  {pct}%")
                 widget = Static("\n".join(lines), classes="card-selected" if selected else "card")
             else:
-                widget = Static(f"  {disk.model}\n  {disk.device}  {disk.capacity_human}  [Protected]",
+                widget = Static(f"  {disk.model}\n  {disk.device}  {disk.capacity_human}  [Unsupported]",
                                 classes="card-disabled")
             widget.idx = i
             c.mount(widget)
@@ -582,8 +584,13 @@ class FinalConfirmationScreen(Screen):
                 yield Static(f"  Filesystem:  {self.config['filesystem']}")
                 yield Static(f"  Label:       {self.config.get('label', '(none)') or '(none)'}")
                 yield Static("")
-                yield Static("  !  ALL EXISTING DATA WILL BE", classes="warning")
-                yield Static("  !  PERMANENTLY DESTROYED.", classes="warning")
+                if self.disk.is_mounted or self.disk.is_boot_disk:
+                    yield Static("  !  DRIVE HAS AN ACTIVE FILESYSTEM!", classes="warning")
+                    yield Static("  !  ALL EXISTING DATA WILL BE", classes="warning")
+                    yield Static("  !  PERMANENTLY DESTROYED.", classes="warning")
+                else:
+                    yield Static("  !  ALL EXISTING DATA WILL BE", classes="warning")
+                    yield Static("  !  PERMANENTLY DESTROYED.", classes="warning")
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
                 Button(" Start Validation ", id="start-btn"),
@@ -640,7 +647,7 @@ class FinalConfirmationScreen(Screen):
         self._bb_test_mode = False
         self._last_pct_time = 0.0
         self._last_pct = 0.0
-        self._bb_blocksize = 1024
+        self._bb_blocksize = 4096
         self._current_step = ""
         if disk.capacity_bytes:
             self._bb_total_blocks = disk.capacity_bytes // self._bb_blocksize
@@ -777,7 +784,7 @@ class FinalConfirmationScreen(Screen):
                     rate = pct_delta / elapsed_since
                     remaining_pct = 100 - pct
                     eta_s = remaining_pct / rate if rate > 0 else 0
-                    self._bb_eta = self._format_eta(eta_s)
+                    self._bb_eta = _format_eta(eta_s)
                     total_bytes = self.disk.capacity_bytes
                     if total_bytes > 0:
                         self._bb_speed = (rate / 100) * total_bytes / 1_000_000
@@ -820,6 +827,10 @@ class FinalConfirmationScreen(Screen):
             ]
         elif pct > 0:
             lines.append(f"  Progress:  {pct:.0f}%")
+        desc = self.STEP_DESCRIPTIONS.get(self._bb_operation, "")
+        if desc:
+            lines.append(f"")
+            lines.append(f"  {desc}")
         info = "\n".join(l for l in lines if l is not None)
         try:
             self.query_one("#progress-info").update(info)

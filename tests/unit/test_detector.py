@@ -91,7 +91,7 @@ def test_filter_boot_disk(mock_run):
         disks = list_disks()
     assert len(disks) == 1
     assert disks[0].is_boot_disk is True
-    assert disks[0].is_supported is False
+    assert disks[0].is_supported is True
 
 
 @patch("obg.core.detector.run")

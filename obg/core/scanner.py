@@ -25,12 +25,12 @@ def run_badblocks(
         MARGIN_BLOCKS = 100
         total_blocks = _get_block_count(device)
         pct_of_total = resume_offset / 100
-        if test_mode:
-            pct_of_total *= 0.01
         start_block = max(0, int(total_blocks * pct_of_total) - MARGIN_BLOCKS)
-        last_block = total_blocks
         if test_mode:
-            last_block = max(1000, int(total_blocks * 0.01))
+            limit = max(1000, int(total_blocks * 0.01))
+            last_block = start_block + limit
+        else:
+            last_block = total_blocks
         command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(last_block), str(start_block)]
         on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}/{last_block})")
     elif test_mode:

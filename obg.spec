@@ -1,16 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
-rich_unicode = collect_submodules('rich._unicode_data')
+block_cipher = None
 
 a = Analysis(
     ['obg/__main__.py'],
     pathex=[os.getcwd()],
     binaries=[],
     datas=collect_data_files('rich._unicode_data'),
-    hiddenimports=rich_unicode,
+    hiddenimports=collect_submodules('rich._unicode_data'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -26,7 +27,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='obg',
+    name='OldButGold',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

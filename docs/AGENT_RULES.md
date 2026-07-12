@@ -14,7 +14,10 @@ Regras para agentes (humanos ou IA) que modificam o OldButGold.
 - `release/OldButGold-v{version}/OldButGold` é o binário atual.
 - `release/OldButGold-v{version}.zip` é o ZIP de distribuição.
 - **Sempre** atualizar ambos após qualquer alteração no código.
-- Limpar `obg_*.log` da pasta release antes de zipar.
+- Usar `python scripts/release.py` para gerar o release completo (build + bundle tools + zip).
+- O script lê a versão de `obg/__init__.py` e gera tudo automaticamente.
+- O release final contém apenas: `OldButGold`, `tools/`, `lib/`, `assets/`, `reports/`, `sessions/`, `README.md`, `LICENSE`.
+- **Nunca** incluir `obg/` (código fonte), `pyproject.toml`, `run.sh` ou `*.log` no release.
 
 ## O que já foi feito (não desfazer sem perguntar)
 

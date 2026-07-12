@@ -104,13 +104,12 @@ def run_pipeline(
         if not _run("Drive Identification", _identify):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 2: Initial Health Check
+        # Step 2: Initial Health Check (collect baseline — short test already done in SmartTestScreen)
         def _initial_health():
             nonlocal smart_before
             smart_before = read_smart(device)
-            ok = run_short_test(device, on_output=on_output)
-            if not ok:
-                on_output("SMART short test did not complete, continuing with available data")
+            if smart_before:
+                on_output("SMART baseline collected after short self-test")
         _run("Initial Health Check", _initial_health, fatal=False)
 
         # Step 3: Surface Validation
@@ -186,7 +185,7 @@ def run_pipeline(
                 obg_version=__version__, generated_at=datetime.now(),
                 snapshot=snapshot, steps=step_results,
                 classification=classification, filesystem=filesystem,
-                label=label, profile=profile, block_size=65536,
+                label=label,                 profile=profile, block_size=4096,
                 total_duration_seconds=time.monotonic() - start_time,
                 success=True,
             )

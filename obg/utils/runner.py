@@ -21,6 +21,9 @@ class RunResult:
 def _tool_dir() -> Path | None:
     if getattr(sys, 'frozen', False):
         return Path(sys.executable).parent
+    pkg_dir = Path(__file__).resolve().parent.parent.parent
+    if (pkg_dir / "tools").is_dir():
+        return pkg_dir
     return None
 
 
@@ -30,10 +33,11 @@ def _resolve_tool(name: str) -> str:
         tp = exe_dir / "tools" / name
         if tp.exists() and os.access(tp, os.X_OK):
             return str(tp)
-        raise FileNotFoundError(
-            f"Required tool '{name}' not found in application bundle. "
-            f"OldButGold must be executed from a complete distribution."
-        )
+        if getattr(sys, 'frozen', False):
+            raise FileNotFoundError(
+                f"Required tool '{name}' not found in application bundle. "
+                f"OldButGold must be executed from a complete distribution."
+            )
     which = shutil.which(name)
     if which:
         return which

@@ -123,7 +123,7 @@ def list_disks() -> list[DiskInfo]:
             is_boot_disk=boot_disk,
             temperature=None,
             power_on_hours=None,
-            is_supported=not is_ssd and not mounted and not boot_disk,
+            is_supported=not is_ssd,
         )
         disks.append(disk_info)
 
