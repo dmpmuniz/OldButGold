@@ -185,7 +185,7 @@ def run_pipeline(
                 obg_version=__version__, generated_at=datetime.now(),
                 snapshot=snapshot, steps=step_results,
                 classification=classification, filesystem=filesystem,
-                label=label,                 profile=profile, block_size=4096,
+                label=label, profile=profile, block_size=4096,
                 total_duration_seconds=time.monotonic() - start_time,
                 success=True,
             )
