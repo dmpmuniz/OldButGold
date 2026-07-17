@@ -30,29 +30,32 @@ def main() -> None:
 
     # Privilege escalation via pkexec
     if os.geteuid() != 0:
-        binary = os.path.abspath(sys.argv[0])
+        # Determine how we were launched: as a frozen binary / script, or via `python -m obg`.
+        is_module = sys.argv[0] in ("-m", "obg") or sys.modules["obg"].__file__.endswith("__main__.py") and "-m" in sys.argv
+        if is_module:
+            python = sys.executable
+            base_cmd = [python, "-m", "obg"]
+            pkexec_args = base_cmd + sys.argv[1:]
+        else:
+            binary = os.path.abspath(sys.argv[0])
+            pkexec_args = [binary] + sys.argv[1:]
         if not sys.stdout.isatty():
             for term_cmd in ("ptyxis", "gnome-terminal"):
                 term = shutil.which(term_cmd)
                 if term:
                     logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
-                    cmd = "pkexec " + binary + "".join(f" {a}" for a in sys.argv[1:])
-                    os.execvp(term, [term, "-x", cmd])
+                    os.execvp(term, [term, "-x", "pkexec " + " ".join(pkexec_args)])
             for term_cmd in ("kgx", "konsole", "xfce4-terminal", "lxterminal", "xterm", "x-terminal-emulator"):
                 term = shutil.which(term_cmd)
                 if term:
                     logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
-                    os.execvp(term, [term, "-e", "pkexec", binary] + sys.argv[1:])
+                    os.execvp(term, [term, "-e", "pkexec"] + pkexec_args)
             logger.error("MAIN", "No terminal emulator found. Run from a terminal: pkexec ./OldButGold")
             sys.exit(1)
         logger.info("MAIN", "Not root, re-executing via pkexec")
-        os.execvp("pkexec", ["pkexec", binary] + sys.argv[1:])
+        os.execvp("pkexec", ["pkexec"] + pkexec_args)
 
     logger.info("MAIN", "Running with elevated privileges")
-
-    # Resize terminal to 100×30 for consistent layout
-    sys.stdout.write("\x1b[8;30;100t")
-    sys.stdout.flush()
 
     try:
         ObgApp(test_mode=test_mode).run()

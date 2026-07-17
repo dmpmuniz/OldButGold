@@ -115,14 +115,28 @@ def _generate_markdown(data: ReportData) -> str:
         "",
         "## 6. Filesystem Creation",
         "",
-        "| Field              | Value                        |",
-        "|--------------------|------------------------------|",
-        f"| Partition Table    | GPT                          |",
-        f"| Filesystem         | {data.filesystem:<29s} |",
-        f"| Volume Label       | {data.label:<29s} |",
-        "",
-        "---",
-        "",
+    ])
+
+    if getattr(data.snapshot, "filesystem_created", True):
+        lines.extend([
+            "| Field              | Value                        |",
+            "|--------------------|------------------------------|",
+            f"| Partition Table    | GPT                          |",
+            f"| Filesystem         | {data.filesystem:<29s} |",
+            f"| Volume Label       | {data.label:<29s} |",
+            "",
+            "---",
+            "",
+        ])
+    else:
+        lines.extend([
+            "Filesystem creation was not completed during this validation.",
+            "",
+            "---",
+            "",
+        ])
+
+    lines.extend([
         "## 7. Validation Timeline",
         "",
     ])

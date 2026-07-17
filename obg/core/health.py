@@ -36,12 +36,23 @@ def _parse_attribute_table(output: str) -> dict[int, int]:
     return attrs
 
 
+class SmartReadError(Exception):
+    """Raised when smartctl cannot be run (missing tool, no permission, device open failed)."""
+
+
 def read_smart(device: str) -> SmartData | None:
     result = run(["smartctl", "-a", device])
     if result.returncode == 4:
-        return None
+        # Device open failed — usually permission / not found. Surface as an error
+        # rather than silently returning None (which would force a FAILED classification).
+        raise SmartReadError(
+            f"smartctl could not open {device} (rc={result.returncode}). "
+            "Root privileges are required to read SMART data."
+        )
     if result.returncode != 0:
-        return None
+        raise SmartReadError(
+            f"smartctl failed on {device} (rc={result.returncode}): {result.stdout.strip() or result.stderr.strip()}"
+        )
 
     output = result.stdout
 

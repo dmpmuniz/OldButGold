@@ -17,9 +17,11 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
         failed_reasons.append("SMART health check FAILED after validation")
     if smart_after and smart_after.overall_health not in ("PASSED", "FAILED"):
         failed_reasons.append(f"SMART health check returned: {smart_after.overall_health}")
-    if smart_after and smart_after.uncorrectable_sectors > 0:
-        failed_reasons.append(f"Uncorrectable sectors: {smart_after.uncorrectable_sectors}")
-    # ponytail: pending sectors and bad blocks are Bronze, not Failed (spec §6)
+    if not snapshot.filesystem_created:
+        failed_reasons.append("Filesystem creation failed")
+    if not snapshot.uninterrupted:
+        failed_reasons.append("Validation was interrupted before completion")
+    # ponytail: pending/uncorrectable sectors and bad blocks are Bronze, not Failed (spec §6)
 
     if failed_reasons:
         return ClassificationResult(
@@ -38,6 +40,8 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
         and smart_after.pending_sectors == 0
         and smart_after.uncorrectable_sectors == 0
         and bb == 0
+        and snapshot.filesystem_created
+        and snapshot.uninterrupted
         and (delta is None or (delta.reallocated == 0 and delta.pending == 0 and delta.uncorrectable == 0))
     )
 
@@ -82,6 +86,8 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
         bronze_reasons.append(f"Significant wear: {smart_after.reallocated_sectors} reallocated sectors")
     if smart_after and smart_after.pending_sectors > 0:
         bronze_reasons.append(f"Pending sectors: {smart_after.pending_sectors}")
+    if smart_after and smart_after.uncorrectable_sectors > 0:
+        bronze_reasons.append(f"Uncorrectable sectors: {smart_after.uncorrectable_sectors}")
     if delta and delta.reallocated > 0:
         bronze_reasons.append(f"New reallocated sectors during test: +{delta.reallocated}")
     if bb > 0:

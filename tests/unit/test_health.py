@@ -40,25 +40,33 @@ def test_read_smart_success():
 
 
 def test_read_smart_not_supported():
+    from obg.core.health import SmartReadError
+
     mock_result = MagicMock()
     mock_result.returncode = 4
     mock_result.stdout = ""
 
     with patch("obg.core.health.run", return_value=mock_result):
-        sd = read_smart("/dev/sdb")
-
-    assert sd is None
+        try:
+            read_smart("/dev/sdb")
+            raise AssertionError("expected SmartReadError")
+        except SmartReadError:
+            pass
 
 
 def test_read_smart_error():
+    from obg.core.health import SmartReadError
+
     mock_result = MagicMock()
     mock_result.returncode = 1
     mock_result.stdout = ""
 
     with patch("obg.core.health.run", return_value=mock_result):
-        sd = read_smart("/dev/sdb")
-
-    assert sd is None
+        try:
+            read_smart("/dev/sdb")
+            raise AssertionError("expected SmartReadError")
+        except SmartReadError:
+            pass
 
 
 def test_run_short_test_success():

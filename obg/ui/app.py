@@ -69,8 +69,6 @@ class ObgApp(App):
     """
 
     def on_mount(self) -> None:
-        sys.stdout.write("\x1b[8;30;100t")
-        sys.stdout.flush()
         self.push_screen(StartupScreen())
 
 
@@ -868,15 +866,19 @@ class ExecutionScreen(Screen):
                 test_mode=self.app.test_mode,
                 resume=self.resume,
             )
-            self.app.call_from_thread(self._complete, result)
+            self.app.call_from_thread(self._complete, result, None)
         except Exception as e:
+            import traceback as _tb
+            _full = "".join(_tb.format_exception(type(e), e, e.__traceback__))
+            from obg.utils import logger
+            logger.error("PIPELINE", f"Pipeline failed:\n{_full}")
             self.app.call_from_thread(self._on_output, f"ERROR: {e}")
-            self.app.call_from_thread(self._complete, None)
+            self.app.call_from_thread(self._complete, None, _full)
 
-    def _complete(self, result) -> None:
+    def _complete(self, result, error: str | None = None) -> None:
         self._done = True
         try:
-            self.app.push_screen(CompleteScreen(self.disk, self.config, result))
+            self.app.push_screen(CompleteScreen(self.disk, self.config, result, error=error))
         except Exception:
             pass
 
@@ -884,11 +886,12 @@ class ExecutionScreen(Screen):
 class CompleteScreen(Screen):
     BINDINGS = [("q", "quit", "Quit")]
 
-    def __init__(self, disk: DiskInfo, config: dict, result: OperationResult | None) -> None:
+    def __init__(self, disk: DiskInfo, config: dict, result: OperationResult | None, error: str | None = None) -> None:
         super().__init__()
         self.disk = disk
         self.config = config
         self.result = result
+        self.error = error
         self._report_exported = False
 
     def compose(self) -> ComposeResult:
@@ -928,6 +931,11 @@ class CompleteScreen(Screen):
                         yield Static("  No report generated.")
                 else:
                     yield Static("  Pipeline failed or was cancelled.", classes="failed")
+                    if self.error:
+                        yield Static("")
+                        yield Static("  Root cause:", classes="warning")
+                        for line in self.error.strip().splitlines()[-12:]:
+                            yield Static(f"  {line}", classes="failed")
             yield Horizontal(
                 Button(" Export Report ", id="export-btn"),
                 Button(" Validate Another Drive ", id="another-btn"),

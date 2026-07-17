@@ -55,3 +55,5 @@ class DiskSnapshot:
     smart_after: SmartData | None
     smart_delta: SmartDelta | None
     badblocks_count: int
+    filesystem_created: bool = True
+    uninterrupted: bool = True

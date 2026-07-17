@@ -51,7 +51,10 @@ def _detect_transport(device_name: str, tran_field: str | None) -> str:
 
 
 def _check_smart(device: str) -> bool:
-    result = run(["smartctl", "-i", device])
+    try:
+        result = run(["smartctl", "-i", device])
+    except Exception:
+        return False
     if result.returncode != 0:
         return False
     for line in result.stdout.splitlines():

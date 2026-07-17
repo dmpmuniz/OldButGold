@@ -16,7 +16,11 @@ _ORIGINAL_EXCEPTHOOK: object | None = None
 def setup() -> Path:
     global _LOG_FILE, _HANDLER, _ORIGINAL_EXCEPTHOOK
     ts = time.strftime("%Y%m%d_%H%M%S")
-    log_dir = Path(os.getcwd())
+    if getattr(sys, "frozen", False):
+        log_dir = Path(sys.executable).parent / "logs"
+    else:
+        log_dir = Path.home() / ".cache" / "oldbutgold"
+    log_dir.mkdir(parents=True, exist_ok=True)
     _LOG_FILE = log_dir / f"obg_{ts}.log"
 
     _HANDLER = logging.FileHandler(_LOG_FILE, encoding="utf-8")

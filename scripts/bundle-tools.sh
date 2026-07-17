@@ -116,6 +116,18 @@ for tool in "$TOOLS_DIR"/*; do
     done
 done
 
+echo ""
+echo "Bundling dynamic loader (ld-linux) for true self-containment..."
+for loader in /lib64/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2 \
+             /usr/lib64/ld-linux-x86-64.so.2 /lib/ld-linux.so.2 \
+             /usr/lib/ld-linux.so.2; do
+    if [ -f "$loader" ]; then
+        cp -nL "$loader" "$LIB_DIR/" 2>/dev/null || true
+        echo "  +  $(basename "$loader")"
+        break
+    fi
+done
+
 chmod +x "$TOOLS_DIR"/* 2>/dev/null || true
 
 (cd "$TOOLS_DIR" && ln -sf mke2fs mkfs.ext4 2>/dev/null; \

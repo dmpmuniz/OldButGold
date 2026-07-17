@@ -32,6 +32,11 @@ def _resolve_tool(name: str) -> str:
     if exe_dir:
         tp = exe_dir / "tools" / name
         if tp.exists() and os.access(tp, os.X_OK):
+            # If we also bundled a dynamic loader + libs, run the tool through
+            # the loader so the bundled libs are actually used (self-contained).
+            loader = _find_loader(exe_dir)
+            if loader:
+                return f"{loader} --library-path {exe_dir / 'lib'} {tp}"
             return str(tp)
         if getattr(sys, 'frozen', False):
             raise FileNotFoundError(
@@ -42,6 +47,15 @@ def _resolve_tool(name: str) -> str:
     if which:
         return which
     raise FileNotFoundError(f"Required tool not found: {name}")
+
+
+def _find_loader(exe_dir: Path) -> str | None:
+    import glob as _glob
+    matches = _glob.glob(str(exe_dir / "lib" / "ld-linux*.so*"))
+    for m in matches:
+        if os.path.isfile(m) and os.access(m, os.X_OK):
+            return m
+    return None
 
 
 def _build_env() -> dict[str, str]:
@@ -60,7 +74,8 @@ def run(
     on_output: Callable[[str], None] | None = None,
     input_data: str | None = None,
 ) -> RunResult:
-    resolved = [_resolve_tool(command[0])] + command[1:]
+    resolved_str = _resolve_tool(command[0])
+    resolved = resolved_str.split() + command[1:]
     cmd_str = " ".join(resolved) if len(" ".join(resolved)) < 200 else " ".join(resolved[:3]) + " ..."
     logger.debug("CMD", f"run: {cmd_str}")
     env = _build_env()

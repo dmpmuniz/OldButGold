@@ -29,15 +29,16 @@ def run_badblocks(
         if test_mode:
             limit = max(1000, int(total_blocks * 0.01))
             blocks_count = limit
+            command = ["badblocks", "-n", "-s", "-v", "-b", "4096", device, str(blocks_count), str(start_block)]
         else:
             blocks_count = total_blocks - start_block
-        command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(blocks_count), str(start_block)]
+            command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(blocks_count), str(start_block)]
         on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}, checking {blocks_count} blocks)")
     elif test_mode:
         total_blocks = _get_block_count(device)
         limit = max(1000, int(total_blocks * 0.01))
-        command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(limit), "0"]
-        on_output(f"TEST MODE: testing {limit} of {total_blocks} blocks (~1%)")
+        command = ["badblocks", "-n", "-s", "-v", "-b", "4096", device, str(limit), "0"]
+        on_output(f"TEST MODE: non-destructive test of {limit} of {total_blocks} blocks (~1%)")
 
     last_checkpoint = [-1]
     def _line_handler(offset_base=0):

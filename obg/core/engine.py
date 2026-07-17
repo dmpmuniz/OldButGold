@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import time
 from datetime import datetime
 from typing import Callable
@@ -46,6 +47,12 @@ def run_pipeline(
 ) -> OperationResult:
     start_time = time.monotonic()
     step_results: list[StepResult] = []
+
+    if os.geteuid() != 0:
+        raise RuntimeError(
+            "Root privileges are required to run disk validation. "
+            "Restart OldButGold with root (e.g. 'pkexec ./OldButGold' or 'sudo obg')."
+        )
 
     if not acquire_lock(device):
         raise RuntimeError(f"Cannot acquire exclusive lock for {device}")
@@ -110,22 +117,32 @@ def run_pipeline(
             on_output("Running SMART short self-test...")
             run_short_test(device, on_output=on_output)
             on_output("Collecting SMART baseline...")
-            smart_before = read_smart(device)
-            if smart_before:
-                on_output("SMART baseline collected")
+            try:
+                smart_before = read_smart(device)
+                if smart_before:
+                    on_output("SMART baseline collected")
+                else:
+                    on_output("No SMART data available for this device")
+            except Exception as e:
+                on_output(f"SMART baseline skipped: {e}")
         _run("Initial Health Check", _initial_health, fatal=False)
 
         # Step 3: Surface Validation
         def _surface():
             nonlocal bb_count
             resume_offset = 0
+            skip = False
             if resume:
                 existing = find_session(disk_info)
                 if existing:
                     resume_offset = existing.get("badblocks_offset", 0)
                     stage = existing.get("current_stage", "")
                     if stage and stage != "Badblocks Validation":
-                        resume_offset = 0
+                        # Badblocks already completed in a prior run — don't re-run it.
+                        skip = True
+            if skip:
+                on_output("Surface Validation already completed — skipping")
+                return
             if resume_offset == 0:
                 create_session(disk_info)
             update_stage(disk_info, "Badblocks Validation")
@@ -142,7 +159,10 @@ def run_pipeline(
         # Step 4: Final Health Check
         def _final_health():
             nonlocal smart_after
-            smart_after = read_smart(device)
+            try:
+                smart_after = read_smart(device)
+            except Exception as e:
+                on_output(f"Final SMART skipped: {e}")
         _run("Final Health Check", _final_health, fatal=False)
 
         # Step 5: Compare Results
@@ -172,7 +192,9 @@ def run_pipeline(
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 8: Format Filesystem
-        if not _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output)):
+        fs_ok = _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output))
+        fs_created = fs_ok
+        if not fs_ok:
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 9: Generate Report
@@ -182,6 +204,7 @@ def run_pipeline(
                 disk_info=disk_info, smart_before=smart_before,
                 smart_after=smart_after, smart_delta=delta,
                 badblocks_count=bb_count,
+                filesystem_created=fs_created, uninterrupted=True,
             )
             classification = classify(snapshot)
             report_data = ReportData(
@@ -229,6 +252,7 @@ def _build_result(
             disk_info=disk_info, smart_before=smart_before,
             smart_after=smart_after, smart_delta=delta,
             badblocks_count=bb_count,
+            filesystem_created=False, uninterrupted=(success and not cancelled),
         )
     if classification is None:
         if not success:
