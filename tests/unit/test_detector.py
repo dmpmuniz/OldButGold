@@ -57,16 +57,16 @@ def test_parse_lsblk_output(mock_run):
 
 
 @patch("obg.core.detector.run")
-def test_unsupported_devices_shown(mock_run):
+def test_unsupported_devices_filtered(mock_run):
     mock_run.side_effect = mock_run_factory()
     with patch("builtins.open", create=True) as mock_open:
         mock_open.return_value.__enter__ = lambda s: s
         mock_open.return_value.__exit__ = MagicMock(return_value=False)
         mock_open.return_value.readlines.return_value = ["/dev/sda / ext4 defaults 0 0\n"]
         disks = list_disks()
-    unsupported = [d for d in disks if not d.is_supported]
-    assert len(unsupported) > 0
-    names = [d.device for d in unsupported]
+    supported = [d for d in disks if d.is_supported]
+    assert len(supported) == 3
+    names = [d.device for d in supported]
     assert any("sdc" in n for n in names)
     assert any("nvme" in n for n in names)
 

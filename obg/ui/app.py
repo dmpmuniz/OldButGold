@@ -29,7 +29,7 @@ class ObgApp(App):
 
     CSS = """
     Screen { background: #000000; align: center middle; }
-    #app-frame { width: 100; height: 30; border: solid #444444; background: #0a0a0a; layout: vertical; }
+    #app-frame { width: 100%; height: 100%; max-width: 120; max-height: 40; border: solid #444444; background: #0a0a0a; layout: vertical; }
     #header { dock: top; height: 1; background: #111111; color: #cccccc; border-bottom: solid #333333; padding: 0 1; }
     #body { height: 1fr; overflow-y: auto; }
     #footer { dock: bottom; height: 1; background: #111111; color: #666666; border-top: solid #333333; padding: 0 1; }
@@ -108,7 +108,7 @@ class StartupScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  HDD Revival Toolkit", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 yield Static("", classes="config-group")
                 yield Static("  OLD BUT GOLD", classes="group-title")
                 yield Static("  HDD Validation & Refurbishment Toolkit", classes="config-group")
@@ -186,7 +186,7 @@ class DriveSelectionScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Select Drive", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 pass
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
@@ -203,11 +203,16 @@ class DriveSelectionScreen(Screen):
     def action_refresh(self) -> None:
         self._refresh()
 
+    @work(thread=True)
     def _refresh(self) -> None:
         try:
-            self._disks = list_disks()
+            disks = list_disks()
         except Exception:
-            self._disks = []
+            disks = []
+        self.app.call_from_thread(self._rebuild_with, disks)
+
+    def _rebuild_with(self, disks: list[DiskInfo]) -> None:
+        self._disks = disks
         self._selected = 0
         self._rebuild()
 
@@ -288,7 +293,7 @@ class SessionDecisionScreen(Screen):
         pct = min(99, int(self.session.get("badblocks_offset", 0) / total_blocks * 100))
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Session Recovery", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 yield Static("  Interrupted Validation Session", classes="group-title")
                 yield Static("")
                 yield Static(f"  Model:         {self.disk.model}")
@@ -336,7 +341,7 @@ class SmartTestScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  SMART Data Collection", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 yield Static("  Collecting SMART data...", classes="group-title")
                 yield Static("", classes="config-group")
                 yield Static(f"  Device: {self.disk.device}", classes="config-group")
@@ -379,7 +384,7 @@ class DriveInfoScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  {self.disk.model}", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="panel-box"):
                         yield Static("  Device Information", classes="group-title")
@@ -471,7 +476,7 @@ class ValidationConfigScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Configuration", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 yield Static("  Validation Profile", classes="group-title")
                 for p in self.PROFILES:
                     marker = "(*)" if p.lower() == self.PROFILES[self._profile_idx].lower() else "( )"
@@ -572,7 +577,7 @@ class FinalConfirmationScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Confirm", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 yield Static("  Validation Summary", classes="group-title")
                 yield Static(f"  Drive:  {self.disk.model}")
                 yield Static(f"  Serial: {self.disk.serial}")
@@ -645,6 +650,7 @@ class ExecutionScreen(Screen):
         self._bb_errors = (0, 0, 0)
         self._bb_bad_count = 0
         self._bb_test_mode = False
+        self._output_lines: list[str] = []
         self._last_pct_time = 0.0
         self._last_pct = 0.0
         self._bb_blocksize = 4096
@@ -658,7 +664,7 @@ class ExecutionScreen(Screen):
         mode = "  [TEST MODE]" if self.app.test_mode else ""
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Validating{mode}", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="steps-col"):
                         yield Static("  Pipeline", classes="group-title")
@@ -670,6 +676,8 @@ class ExecutionScreen(Screen):
                         yield Static("  Progress", classes="group-title")
                         yield ProgressBar(total=100, id="bb-progress", show_eta=False)
                         yield Static("", id="progress-info", classes="progress-info")
+                        yield Static("  Output", classes="group-title")
+                        yield Static("", id="live-output", classes="progress-info")
             yield Static("  [C] Cancel  —  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
@@ -730,6 +738,14 @@ class ExecutionScreen(Screen):
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
+        # Always show raw output in the live-output panel
+        try:
+            self._output_lines.append(line)
+            if len(self._output_lines) > 200:
+                self._output_lines = self._output_lines[-200:]
+            self.query_one("#live-output").update("\n".join(self._output_lines[-20:]))
+        except Exception:
+            pass
         if "TEST MODE" in line:
             self._bb_test_mode = True
             self._bb_operation = line.strip()
@@ -878,7 +894,7 @@ class CompleteScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  |  Validation Complete", id="header")
-            with Container(id="body"):
+            with VerticalScroll(id="body"):
                 if self.result:
                     r = self.result
                     cls_val = r.classification.classification.value

@@ -52,10 +52,15 @@ def _detect_transport(device_name: str, tran_field: str | None) -> str:
 
 def _check_smart(device: str) -> bool:
     result = run(["smartctl", "-i", device])
-    if result.returncode == 0:
-        for line in result.stdout.splitlines():
-            if "SMART support is: Available" in line:
-                return True
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        if "SMART support is: Available" in line:
+            return True
+        if "SMART overall-health" in line:
+            return True
+        if "NVMe" in line and "SMART" in line:
+            return True
     return False
 
 
@@ -68,7 +73,14 @@ def _parse_capacity_human(size_bytes: int) -> str:
 
 
 def _is_unsupported(dev: dict) -> bool:
-    return not bool(dev.get("rota", False))
+    name = dev.get("name", "")
+    # Only block these device types (not SSDs/NVMe which are valid targets)
+    if name.startswith(("loop", "zram", "ram", "dm-", "sr", "fd")):
+        return True
+    # CD-ROM / read-only devices
+    if dev.get("type") not in ("disk", "loop"):
+        return True
+    return False
 
 
 def list_disks() -> list[DiskInfo]:
@@ -95,7 +107,7 @@ def list_disks() -> list[DiskInfo]:
 
         name = dev.get("name", "")
         size = dev.get("size", 0) or 0
-        is_ssd = _is_unsupported(dev)
+        is_unsupported = _is_unsupported(dev)
         boot_disk = boot_device is not None and boot_device.startswith(f"/dev/{name}")
         mounted = _is_disk_mounted(name, mounts)
 
@@ -123,7 +135,7 @@ def list_disks() -> list[DiskInfo]:
             is_boot_disk=boot_disk,
             temperature=None,
             power_on_hours=None,
-            is_supported=not is_ssd,
+            is_supported=not is_unsupported,
         )
         disks.append(disk_info)
 
