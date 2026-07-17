@@ -665,7 +665,7 @@ class ExecutionScreen(Screen):
             with VerticalScroll(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="steps-col"):
-                        yield Static("  Pipeline", classes="group-title")
+                        yield Static("  Steps", classes="group-title")
                         for s in PIPELINE_STAGES:
                             w = Static(f"  [ ]  {s}", classes="step-pending")
                             self._step_widgets[s] = w
