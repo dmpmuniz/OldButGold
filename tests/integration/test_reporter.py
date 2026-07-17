@@ -72,10 +72,10 @@ def test_classify_failed_smart_fail():
     assert result.classification == Classification.FAILED
 
 
-def test_classify_failed_pending():
+def test_classify_bronze_pending():
     snap = _make_snapshot(_make_smart(), _make_smart(pending=1))
     result = classify(snap)
-    assert result.classification == Classification.FAILED
+    assert result.classification == Classification.BRONZE
 
 
 def test_generate_report_creates_file():
