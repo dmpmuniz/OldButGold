@@ -9,7 +9,7 @@ from obg.models.classification import Classification, ClassificationResult
 from obg import __version__
 from obg.models.report import ReportData
 from obg.core.detector import verify_identity
-from obg.core.health import read_smart, run_short_test
+from obg.core.health import read_smart
 from obg.core.scanner import run_badblocks
 from obg.core.partitioner import create_gpt, create_partition
 from obg.core.formatter import format_filesystem
@@ -111,11 +111,9 @@ def run_pipeline(
         if not _run("Drive Identification", _identify):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 2: Initial Health Check (collect baseline — short test already done in SmartTestScreen)
+        # Step 2: Initial Health Check (baseline SMART — short test already done in SmartTestScreen)
         def _initial_health():
             nonlocal smart_before
-            on_output("Running SMART short self-test...")
-            run_short_test(device, on_output=on_output)
             on_output("Collecting SMART baseline...")
             try:
                 smart_before = read_smart(device)

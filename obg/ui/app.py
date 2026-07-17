@@ -355,6 +355,9 @@ class SmartTestScreen(Screen):
     @work(thread=True)
     def _run_test(self) -> None:
         try:
+            self.app.call_from_thread(self._set_status, "  Running SMART short self-test...")
+            from obg.core.health import run_short_test
+            run_short_test(self.disk.device, on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]))
             self.app.call_from_thread(self._set_status, "  Collecting SMART data...")
             sd = read_smart(self.disk.device)
             self.app.call_from_thread(self._done, sd)
@@ -910,9 +913,34 @@ class CompleteScreen(Screen):
                     sa = r.snapshot.smart_after
                     yield Static(f"  Filesystem:    {self.config['filesystem']}")
                     yield Static(f"  Label:         {self.config['label'] or '(none)'}")
-                    yield Static(f"  SMART Before:  {sb.overall_health if sb else 'N/A'}")
-                    yield Static(f"  SMART After:   {sa.overall_health if sa else 'N/A'}")
                     yield Static(f"  Bad Blocks:    {r.snapshot.badblocks_count}")
+                    yield Static("")
+                    yield Static("  SMART Comparison", classes="group-title")
+                    if sb and sa:
+                        items = [
+                            ("Reallocated Sectors", sb.reallocated_sectors, sa.reallocated_sectors, r.snapshot.smart_delta.reallocated if r.snapshot.smart_delta else None),
+                            ("Pending Sectors", sb.pending_sectors, sa.pending_sectors, r.snapshot.smart_delta.pending if r.snapshot.smart_delta else None),
+                            ("Uncorrectable Sectors", sb.uncorrectable_sectors, sa.uncorrectable_sectors, r.snapshot.smart_delta.uncorrectable if r.snapshot.smart_delta else None),
+                            ("CRC Errors", sb.crc_errors, sa.crc_errors, r.snapshot.smart_delta.crc_errors if r.snapshot.smart_delta else None),
+                        ]
+                        for label, before, after, delta_val in items:
+                            d = "unchanged"
+                            if delta_val is not None:
+                                if delta_val > 0:
+                                    d = f"+{delta_val}"
+                                elif delta_val < 0:
+                                    d = f"{delta_val}"
+                            yield Static(f"  {label:22s}  Before: {before:<6d}  After: {after:<6d}  Delta: {d}")
+                        temp_str = f"  {'Temperature':22s}  Before: {sb.temperature or 'N/A':<6}  After: {sa.temperature or 'N/A':<6}"
+                        if r.snapshot.smart_delta and r.snapshot.smart_delta.temperature is not None:
+                            t = r.snapshot.smart_delta.temperature
+                            temp_str += f"  Delta: {'+' if t >= 0 else ''}{t}°C"
+                        yield Static(temp_str)
+                        yield Static(f"  {'Power-On Hours':22s}  Before: {sb.power_on_hours or 'N/A':<6}  After: {sa.power_on_hours or 'N/A':<6}")
+                    elif sb:
+                        yield Static(f"  Health: {sb.overall_health}")
+                    else:
+                        yield Static("  SMART data not available")
                     yield Static("")
                     for reason in r.classification.reasons:
                         yield Static(f"  - {reason}")
