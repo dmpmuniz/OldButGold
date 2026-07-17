@@ -56,6 +56,9 @@ def read_smart(device: str) -> SmartData | None:
 
     output = result.stdout
 
+    if _is_nvme(output):
+        return _parse_nvme(device, output)
+
     overall_health = "UNKNOWN"
     health_match = re.search(
         r"SMART overall-health self-assessment test result:\s+(\S+)", output
@@ -74,6 +77,63 @@ def read_smart(device: str) -> SmartData | None:
         pending_sectors=attrs.get(197, 0),
         uncorrectable_sectors=attrs.get(198, 0),
         crc_errors=attrs.get(199, 0),
+        temperature=temperature,
+        power_on_hours=power_on_hours,
+        raw_output=output,
+        collected_at=datetime.now(),
+    )
+
+
+def _is_nvme(output: str) -> bool:
+    # NVMe devices expose a SMART/Health Information log and never an ATA
+    # attribute table ("SMART Attributes Data Structure"). Detect via the
+    # NVMe-specific markers so we don't mis-parse them as ATA (all zeros).
+    nvme_markers = (
+        "SMART/Health Information" in output,
+        "Media and Data Integrity Errors:" in output,
+        "Percentage Used:" in output,
+        "Available Spare:" in output,
+    )
+    ata_marker = "SMART Attributes Data Structure" in output
+    return any(nvme_markers) and not ata_marker
+
+
+def _parse_nvme(device: str, output: str) -> SmartData:
+    # NVMe has no ATA attribute table. Derive real health signals from the
+    # SMART/Health Information log instead of returning all-zero placeholders.
+    critical_warning = 0
+    m = re.search(r"Critical Warning:\s*0x([0-9a-fA-F]+)", output)
+    if m:
+        critical_warning = int(m.group(1), 16)
+
+    # Critical Warning bits: 0=raw, 1=temp, 2=spare, 3=readonly, 4=volatile,
+    # 5=media errors, 6=any. Non-zero => drive is not healthy.
+    overall_health = "FAILED" if critical_warning != 0 else "PASSED"
+
+    temp_m = re.search(r"Temperature:\s*(\d+)\s*Celsius", output)
+    temperature = int(temp_m.group(1)) if temp_m else None
+
+    poh_m = re.search(r"Power On Hours:\s*(\d+)", output)
+    power_on_hours = int(poh_m.group(1)) if poh_m else None
+
+    # Media and Data Integrity Errors — NVMe's analog of uncorrectable sectors.
+    media_m = re.search(r"Media and Data Integrity Errors:\s*(\d+)", output)
+    uncorrectable = int(media_m.group(1)) if media_m else 0
+
+    # Available Spare / Percentage Used give a reallocation-style signal.
+    spare_m = re.search(r"Available Spare:\s*(\d+)%", output)
+    used_m = re.search(r"Percentage Used:\s*(\d+)%", output)
+    reallocated = 0
+    if used_m and spare_m:
+        reallocated = int(used_m.group(1))
+
+    # NVMe has no separate pending/CRC counters; map media errors to uncorrectable.
+    return SmartData(
+        overall_health=overall_health,
+        reallocated_sectors=reallocated,
+        pending_sectors=0,
+        uncorrectable_sectors=uncorrectable,
+        crc_errors=0,
         temperature=temperature,
         power_on_hours=power_on_hours,
         raw_output=output,

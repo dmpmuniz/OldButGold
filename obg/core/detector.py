@@ -64,6 +64,9 @@ def _check_smart(device: str) -> bool:
             return True
         if "NVMe" in line and "SMART" in line:
             return True
+    # NVMe devices always expose SMART/Health (no "support" line in -i output).
+    if "NVMe" in result.stdout:
+        return True
     return False
 
 
@@ -160,4 +163,5 @@ def verify_identity(device: str, expected_model: str, expected_serial: str) -> b
     dev = blockdevices[0]
     model = (dev.get("model") or "").strip()
     serial = (dev.get("serial") or "").strip()
-    return model == expected_model and serial == expected_serial
+    # Both sides carry inconsistent whitespace from lsblk; compare normalized.
+    return model == expected_model.strip() and serial == expected_serial.strip()
