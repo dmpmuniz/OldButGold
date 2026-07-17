@@ -33,4 +33,5 @@ def format_filesystem(
 
     result = run(cmd, on_output=on_output)
     if result.returncode != 0:
-        raise RuntimeError(f"mkfs failed: {result.stderr}")
+        error_msg = result.stdout or result.stderr
+        raise RuntimeError(f"mkfs failed: {error_msg}")

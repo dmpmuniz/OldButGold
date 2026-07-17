@@ -28,11 +28,11 @@ def run_badblocks(
         start_block = max(0, int(total_blocks * pct_of_total) - MARGIN_BLOCKS)
         if test_mode:
             limit = max(1000, int(total_blocks * 0.01))
-            last_block = start_block + limit
+            blocks_count = limit
         else:
-            last_block = total_blocks
-        command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(last_block), str(start_block)]
-        on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}/{last_block})")
+            blocks_count = total_blocks - start_block
+        command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(blocks_count), str(start_block)]
+        on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}, checking {blocks_count} blocks)")
     elif test_mode:
         total_blocks = _get_block_count(device)
         limit = max(1000, int(total_blocks * 0.01))
