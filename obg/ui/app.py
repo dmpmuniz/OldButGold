@@ -15,7 +15,7 @@ from obg import __version__
 from obg.core.detector import list_disks
 from obg.core.engine import run_pipeline, STEPS as PIPELINE_STAGES
 from obg.core.reporter import _format_duration as _format_eta
-from obg.core.health import read_smart, run_short_test
+from obg.core.health import read_smart
 from obg.core.session import find_session, complete_session
 from obg.config import load_config, save_config, VALID_PROFILES, VALID_FILESYSTEMS
 from obg.models.disk import DiskInfo
@@ -335,15 +335,15 @@ class SmartTestScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  SMART Short Self-Test", id="header")
+            yield Static(f"OldButGold v{__version__}  |  SMART Data Collection", id="header")
             with Container(id="body"):
-                yield Static("  Running SMART Short Self-Test...", classes="group-title")
+                yield Static("  Collecting SMART data...", classes="group-title")
                 yield Static("", classes="config-group")
                 yield Static(f"  Device: {self.disk.device}", classes="config-group")
                 yield Static(f"  Model:  {self.disk.model}", classes="config-group")
                 yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
                 yield Static("", classes="config-group")
-                yield Static("  This may take up to 2 minutes.", id="test-status", classes="config-group")
+                yield Static("  Reading SMART attributes...", id="test-status", classes="config-group")
             yield Static("  Please wait...", id="footer")
 
     def on_mount(self) -> None:
@@ -352,13 +352,11 @@ class SmartTestScreen(Screen):
     @work(thread=True)
     def _run_test(self) -> None:
         try:
-            self.app.call_from_thread(self._set_status, "  Running short test...")
-            run_short_test(self.disk.device, on_output=lambda msg: self.app.call_from_thread(self._set_status, f"  {msg}"))
             self.app.call_from_thread(self._set_status, "  Collecting SMART data...")
             sd = read_smart(self.disk.device)
             self.app.call_from_thread(self._done, sd)
         except Exception as e:
-            self.app.call_from_thread(self._set_status, f"  SMART Short failed: {e}")
+            self.app.call_from_thread(self._set_status, f"  SMART read failed: {e}")
             self.app.call_from_thread(self._done, None)
 
     def _set_status(self, msg: str) -> None:
@@ -614,6 +612,8 @@ class FinalConfirmationScreen(Screen):
         self.app.push_screen(ExecutionScreen(self.disk, self.config, resume=self.resume))
 
 
+
+class ExecutionScreen(Screen):
     STEP_DESCRIPTIONS = {
         "Drive Identification": "Verifying device identity and accessibility...\nChecking that the expected drive is present and reachable.",
         "Initial Health Check": "Running SMART short self-test...\nThe drive firmware performs an internal diagnostic scan.\nEstimated duration: up to 2 minutes.",

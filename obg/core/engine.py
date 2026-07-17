@@ -107,9 +107,12 @@ def run_pipeline(
         # Step 2: Initial Health Check (collect baseline — short test already done in SmartTestScreen)
         def _initial_health():
             nonlocal smart_before
+            on_output("Running SMART short self-test...")
+            run_short_test(device, on_output=on_output)
+            on_output("Collecting SMART baseline...")
             smart_before = read_smart(device)
             if smart_before:
-                on_output("SMART baseline collected after short self-test")
+                on_output("SMART baseline collected")
         _run("Initial Health Check", _initial_health, fatal=False)
 
         # Step 3: Surface Validation

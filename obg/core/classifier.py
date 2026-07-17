@@ -11,6 +11,8 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
 
     # FAILED — validation cannot complete
     failed_reasons = []
+    if smart_after is None:
+        failed_reasons.append("Final SMART data unavailable — health check failed")
     if smart_after and smart_after.overall_health == "FAILED":
         failed_reasons.append("SMART health check FAILED after validation")
     if smart_after and smart_after.pending_sectors > 0:
