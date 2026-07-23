@@ -62,6 +62,9 @@ class ObgApp(App):
     .dialog-box { width: 50; min-width: 40; border: solid #333333; background: #111111; padding: 1; }
     .progress-info { color: #aaaaaa; }
     ProgressBar { margin: 0 2; }
+    #output-scroll { max-height: 12; overflow-y: auto; }
+    #live-output { padding: 0 1; }
+    #progress-info { max-height: 8; overflow-y: auto; }
     .startup-btn { width: 1fr; margin: 0 1; }
     .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
     .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
@@ -690,7 +693,8 @@ class ExecutionScreen(Screen):
                         yield ProgressBar(total=100, id="bb-progress", show_eta=False)
                         yield Static("", id="progress-info", classes="progress-info")
                         yield Static("  Output", classes="group-title")
-                        yield Static("", id="live-output", classes="progress-info")
+                        with VerticalScroll(id="output-scroll", classes="panel-box"):
+                            yield Static("", id="live-output", classes="progress-info")
             yield Static("  [C] Cancel  —  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
