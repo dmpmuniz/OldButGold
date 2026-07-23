@@ -58,13 +58,14 @@ def _find_loader(exe_dir: Path) -> str | None:
     return None
 
 
-def _build_env() -> dict[str, str]:
+def _build_env(use_bundled_libs: bool = False) -> dict[str, str]:
     env = os.environ.copy()
-    exe_dir = _tool_dir()
-    if exe_dir and (exe_dir / "lib").exists():
-        lib_path = str(exe_dir / "lib")
-        existing = env.get("LD_LIBRARY_PATH", "")
-        env["LD_LIBRARY_PATH"] = f"{lib_path}:{existing}" if existing else lib_path
+    if use_bundled_libs:
+        exe_dir = _tool_dir()
+        if exe_dir and (exe_dir / "lib").exists():
+            lib_path = str(exe_dir / "lib")
+            existing = env.get("LD_LIBRARY_PATH", "")
+            env["LD_LIBRARY_PATH"] = f"{lib_path}:{existing}" if existing else lib_path
     return env
 
 
@@ -78,7 +79,7 @@ def run(
     resolved = resolved_str.split() + command[1:]
     cmd_str = " ".join(resolved) if len(" ".join(resolved)) < 200 else " ".join(resolved[:3]) + " ..."
     logger.debug("CMD", f"run: {cmd_str}")
-    env = _build_env()
+    env = _build_env(use_bundled_libs=getattr(sys, 'frozen', False))
     start = time.monotonic()
 
     if on_output:
