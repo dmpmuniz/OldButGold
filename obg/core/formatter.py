@@ -14,20 +14,22 @@ def format_filesystem(
     filesystem: str,
     label: str,
     on_output: Callable[[str], None],
+    extra_args: list[str] | None = None,
 ) -> None:
     max_len = LABEL_MAX_LEN.get(filesystem, 16)
     if len(label) > max_len:
         on_output(f"Label truncated from '{label}' to '{label[:max_len]}' (max {max_len} chars for {filesystem})")
         label = label[:max_len]
 
+    extra = extra_args or []
     if filesystem == "ext4":
-        cmd = ["mkfs.ext4", "-L", label, partition]
+        cmd = ["mkfs.ext4", "-L", label, partition] + extra
     elif filesystem == "ntfs":
-        cmd = ["mkfs.ntfs", "-f", "-L", label, partition]
+        cmd = ["mkfs.ntfs", "-f", "-L", label, partition] + extra
     elif filesystem == "exfat":
-        cmd = ["mkfs.exfat", "-n", label, partition]
+        cmd = ["mkfs.exfat", "-n", label, partition] + extra
     elif filesystem == "fat32":
-        cmd = ["mkfs.fat", "-F", "32", "-n", label, partition]
+        cmd = ["mkfs.fat", "-F", "32", "-n", label, partition] + extra
     else:
         raise ValueError(f"Unsupported filesystem: {filesystem}")
 

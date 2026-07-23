@@ -106,6 +106,9 @@ def run_pipeline(
 
         # Step 1: Drive Identification
         def _identify():
+            if disk_info.is_mock:
+                on_output(f"Mock device detected: {device}")
+                return
             if not verify_identity(device, disk_info.model, disk_info.serial):
                 raise RuntimeError("Device identity mismatch")
         if not _run("Drive Identification", _identify):
@@ -114,6 +117,9 @@ def run_pipeline(
         # Step 2: Initial Health Check (baseline SMART — short test already done in SmartTestScreen)
         def _initial_health():
             nonlocal smart_before
+            if disk_info.is_mock:
+                on_output("SMART not available for mock device")
+                return
             on_output("Collecting SMART baseline...")
             try:
                 smart_before = read_smart(device)
@@ -157,6 +163,9 @@ def run_pipeline(
         # Step 4: Final Health Check
         def _final_health():
             nonlocal smart_after
+            if disk_info.is_mock:
+                on_output("SMART not available for mock device")
+                return
             try:
                 smart_after = read_smart(device)
             except Exception as e:
@@ -182,15 +191,19 @@ def run_pipeline(
         if not _run("Prepare Disk", lambda: create_gpt(device)):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
-        # Step 7: Create Partition
+        # Step 7: Create Partition (skip for mock files — partition lives inside the image)
         def _part():
             nonlocal partition
-            partition = create_partition(device)
+            if disk_info.is_mock:
+                partition = device
+            else:
+                partition = create_partition(device)
         if not _run("Create Partition", _part):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
 
         # Step 8: Format Filesystem
-        fs_ok = _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output))
+        extra_args = ["-F"] if disk_info.is_mock else []
+        fs_ok = _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output, extra_args=extra_args))
         fs_created = fs_ok
         if not fs_ok:
             return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)

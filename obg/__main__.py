@@ -8,22 +8,50 @@ from obg.ui.app import ObgApp
 from obg.utils import logger
 
 
+def _create_mock_image(path: str, size_gb: int = 1) -> None:
+    total = size_gb * 1024 * 1024 * 1024
+    block_size = 1024 * 1024
+    import math
+    blocks = total // block_size
+    logger.info("MAIN", f"Creating mock disk image: {path} ({size_gb} GB)")
+    with open(path, "wb") as f:
+        f.truncate(block_size * blocks)
+    logger.info("MAIN", "Mock disk image created")
+
+
 def main() -> None:
     logger.setup()
     logger.info("MAIN", "OldButGold started")
 
     test_mode = "--test" in sys.argv
+    mock_path = None
 
+    remaining = []
     for arg in sys.argv[1:]:
+        if arg == "--mock" or arg.startswith("--mock="):
+            if "=" in arg:
+                mock_path = arg.split("=", 1)[1]
+            else:
+                mock_path = "test_disk_1gb.img"
+        else:
+            remaining.append(arg)
+
+    for arg in remaining:
         if arg in ("--version", "-V"):
             print(f"OldButGold v{__version__}")
             logger.close()
             sys.exit(0)
-        elif arg != "--test":
+        elif arg == "--test":
+            continue
+        else:
             print(f"Unknown argument: {arg}")
-            print("Usage: obg [--version] [--test]")
+            print("Usage: obg [--version] [--test] [--mock[=path]]")
             logger.close()
             sys.exit(1)
+
+    if mock_path and not os.path.exists(mock_path):
+        print(f"Creating mock disk image: {mock_path}")
+        _create_mock_image(mock_path)
 
     if test_mode:
         logger.info("MAIN", "TEST MODE — Badblocks will scan ~1% of disk")
@@ -58,7 +86,7 @@ def main() -> None:
     logger.info("MAIN", "Running with elevated privileges")
 
     try:
-        ObgApp(test_mode=test_mode).run()
+        ObgApp(test_mode=test_mode, mock_path=mock_path).run()
     except Exception as e:
         logger.error("APP", f"Unhandled exception: {e}")
         raise

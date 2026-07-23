@@ -8,15 +8,17 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
     smart_after = snapshot.smart_after
     delta = snapshot.smart_delta
     bb = snapshot.badblocks_count
+    smart_unavailable = smart_before is None and smart_after is None
 
     # FAILED — validation cannot complete
     failed_reasons = []
-    if smart_after is None:
-        failed_reasons.append("Final SMART data unavailable — health check failed")
-    if smart_after and smart_after.overall_health == "FAILED":
-        failed_reasons.append("SMART health check FAILED after validation")
-    if smart_after and smart_after.overall_health not in ("PASSED", "FAILED"):
-        failed_reasons.append(f"SMART health check returned: {smart_after.overall_health}")
+    if not smart_unavailable:
+        if smart_after is None:
+            failed_reasons.append("Final SMART data unavailable — health check failed")
+        if smart_after and smart_after.overall_health == "FAILED":
+            failed_reasons.append("SMART health check FAILED after validation")
+        if smart_after and smart_after.overall_health not in ("PASSED", "FAILED"):
+            failed_reasons.append(f"SMART health check returned: {smart_after.overall_health}")
     if not snapshot.filesystem_created:
         failed_reasons.append("Filesystem creation failed")
     if not snapshot.uninterrupted:
@@ -80,6 +82,8 @@ def classify(snapshot: DiskSnapshot) -> ClassificationResult:
 
     # BRONZE — validation completed but defects detected
     bronze_reasons = []
+    if smart_unavailable:
+        bronze_reasons.append("SMART data not available for this device type")
     if smart_after and smart_after.overall_health == "PASSED":
         bronze_reasons.append("SMART health PASSED")
     if smart_after and smart_after.reallocated_sectors > 5:

@@ -15,8 +15,10 @@ def create_partition(device: str) -> str:
     if result.returncode != 0:
         raise RuntimeError(f"sgdisk create partition failed: {result.stderr}")
 
-    result = run(["partprobe", device])
-    time.sleep(2)
+    is_file = os.path.isfile(device)
+    if not is_file:
+        result = run(["partprobe", device])
+        time.sleep(2)
 
     name = os.path.basename(device)
     if name[-1].isdigit():

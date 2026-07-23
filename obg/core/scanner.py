@@ -1,10 +1,13 @@
 from __future__ import annotations
+import os
 import re
 from typing import Callable
 from obg.utils.runner import run
 
 
 def _get_block_count(device: str) -> int:
+    if os.path.isfile(device):
+        return os.path.getsize(device) // 4096
     result = run(["blockdev", "--getsz", device])
     if result.returncode != 0:
         raise RuntimeError(f"blockdev --getsz failed: {result.stderr}")

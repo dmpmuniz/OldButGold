@@ -12,7 +12,7 @@ from textual.widgets import Static, Button, Input, ProgressBar
 from textual import work
 from obg import __version__
 
-from obg.core.detector import list_disks
+from obg.core.detector import list_disks, list_mock_disks
 from obg.core.engine import run_pipeline, STEPS as PIPELINE_STAGES
 from obg.core.reporter import _format_duration as _format_eta
 from obg.core.health import read_smart
@@ -23,9 +23,10 @@ from obg.models.operation import StepStatus, OperationResult
 
 
 class ObgApp(App):
-    def __init__(self, test_mode: bool = False):
+    def __init__(self, test_mode: bool = False, mock_path: str | None = None):
         super().__init__()
         self.test_mode = test_mode
+        self.mock_path = mock_path
 
     CSS = """
     Screen { background: #000000; align: center middle; }
@@ -154,6 +155,8 @@ class StartupScreen(Screen):
     def _init(self) -> None:
         try:
             disks = list_disks()
+            if self.app.mock_path:
+                disks = list_mock_disks(self.app.mock_path) + disks
             self.app.call_from_thread(self._init_done, disks)
         except Exception as e:
             self.app.call_from_thread(self._init_error, str(e))
@@ -205,6 +208,8 @@ class DriveSelectionScreen(Screen):
     def _refresh(self) -> None:
         try:
             disks = list_disks()
+            if self.app.mock_path:
+                disks = list_mock_disks(self.app.mock_path) + disks
         except Exception:
             disks = []
         self.app.call_from_thread(self._rebuild_with, disks)
@@ -355,6 +360,10 @@ class SmartTestScreen(Screen):
     @work(thread=True)
     def _run_test(self) -> None:
         try:
+            if self.disk.is_mock:
+                self.app.call_from_thread(self._set_status, "  Mock device — skipping SMART test")
+                self.app.call_from_thread(self._done, None)
+                return
             self.app.call_from_thread(self._set_status, "  Running SMART short self-test...")
             from obg.core.health import run_short_test
             run_short_test(self.disk.device, on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]))
@@ -437,6 +446,9 @@ class DriveInfoScreen(Screen):
 
     @work(thread=True)
     def _fetch_smart(self) -> None:
+        if self.disk.is_mock:
+            self.app.call_from_thread(self._update_smart, None)
+            return
         try:
             sd = read_smart(self.disk.device)
             self.app.call_from_thread(self._update_smart, sd)

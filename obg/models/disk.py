@@ -24,6 +24,7 @@ class DiskInfo:
     temperature: int | None
     power_on_hours: int | None
     is_supported: bool = True
+    is_mock: bool = False
 
 
 @dataclass

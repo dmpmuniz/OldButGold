@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 import json
 import os
 from obg.models.disk import DiskInfo
@@ -146,6 +147,36 @@ def list_disks() -> list[DiskInfo]:
         disks.append(disk_info)
 
     return disks
+
+
+def list_mock_disks(image_path: str) -> list[DiskInfo]:
+    try:
+        size = os.path.getsize(image_path)
+    except OSError:
+        return []
+    name = os.path.basename(image_path)
+    return [DiskInfo(
+        device=os.path.abspath(image_path),
+        model=f"Mock Disk ({name})",
+        serial="MOCK-" + hashlib.md5(image_path.encode()).hexdigest()[:8].upper(),
+        firmware="1.0",
+        capacity_bytes=size,
+        capacity_human=_parse_capacity_human(size),
+        interface="virtual",
+        transport="mock",
+        logical_sector=512,
+        physical_sector=4096,
+        smart_supported=False,
+        uas_enabled=False,
+        current_fs=None,
+        partition_table=None,
+        is_mounted=False,
+        is_boot_disk=False,
+        temperature=None,
+        power_on_hours=None,
+        is_supported=True,
+        is_mock=True,
+    )]
 
 
 def verify_identity(device: str, expected_model: str, expected_serial: str) -> bool:
