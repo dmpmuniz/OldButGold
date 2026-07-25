@@ -453,8 +453,7 @@ class SmartTestScreen(Screen):
             yield Static("  \u2191/\u2192 Continue   Esc Back", id="footer")
 
     def on_mount(self) -> None:
-        self._load_smart()
-        self._run_test()
+        self._run_workflow()
 
     def _show_summary(self, sd) -> None:
         if sd is None:
@@ -476,31 +475,47 @@ class SmartTestScreen(Screen):
         elif event.key in ("enter", "down", "up"):
             self.app.push_screen(DriveInfoScreen(self.disk, self._smart_data, resume=self.resume))
 
-    def _load_smart(self) -> None:
-        try:
-            sd = read_smart(self.disk.device)
-            self._smart_data = sd
-            self._show_summary(sd)
-        except Exception as e:
-            self._set_status(f"  SMART read failed: {e}")
-
     @work(thread=True)
-    def _run_test(self) -> None:
+    def _run_workflow(self) -> None:
         try:
             if self.disk.is_mock:
+                self.app.call_from_thread(self._set_status, "  Mock device \u2014 skipping SMART test")
                 return
-            self.app.call_from_thread(self._set_status, "  Running SMART short self-test...")
+
+            # 1. load initial SMART data (with elapsed timer)
+            t0 = time.monotonic()
+            self.app.call_from_thread(self._set_status, "  Reading SMART data...")
+            sd = None
+            while sd is None:
+                try:
+                    sd = read_smart(self.disk.device)
+                except Exception:
+                    elapsed = int(time.monotonic() - t0)
+                    self.app.call_from_thread(self._set_status, f"  Reading SMART data... ({elapsed}s, timeout 30s)")
+                    if elapsed >= 30:
+                        self.app.call_from_thread(self._set_status, "  SMART read timed out \u2014 continuing without baseline")
+                        break
+                    time.sleep(1)
+
+            self._smart_data = sd
+            self.app.call_from_thread(self._show_summary, sd)
+            time.sleep(0.5)
+
+            # 2. run short test with progress
+            self.app.call_from_thread(self._set_status, "  Running SMART short self-test (2 min expected)...")
             from obg.utils.runner import run
-            from obg.core.health import poll_smart_test
             result = run(["smartctl", "-t", "short", self.disk.device], timeout=30)
             if result.returncode not in (0, 2):
                 err = (result.stderr or result.stdout or "unknown error").strip()[:80]
                 self.app.call_from_thread(self._set_status, f"  SMART test not supported: {err}")
                 return
+            from obg.core.health import poll_smart_test
             ok = poll_smart_test(self.disk.device, 300, on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]))
             if not ok:
-                self.app.call_from_thread(self._set_status, "  SMART test did not complete in time \u2014 continuing with current data")
+                self.app.call_from_thread(self._set_status, "  SMART test timed out (5 min) \u2014 continuing with current data")
                 return
+
+            # 3. refresh data
             sd = read_smart(self.disk.device)
             self._smart_data = sd
             self.app.call_from_thread(self._show_summary, sd)
