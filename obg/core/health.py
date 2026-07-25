@@ -49,7 +49,7 @@ def read_smart(device: str) -> SmartData | None:
             f"smartctl could not open {device} (rc={result.returncode}). "
             "Root privileges are required to read SMART data."
         )
-    if result.returncode != 0:
+    if result.returncode not in (0, 64):
         raise SmartReadError(
             f"smartctl failed on {device} (rc={result.returncode}): {result.stdout.strip() or result.stderr.strip()}"
         )

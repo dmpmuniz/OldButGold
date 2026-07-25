@@ -514,7 +514,7 @@ class SmartTestScreen(Screen):
 
     def _done(self, smart_data) -> None:
         self._smart_data = smart_data
-        self.app.call_from_thread(self._show_summary, smart_data)
+        self._show_summary(smart_data)
 
 
 class DriveInfoScreen(Screen):
