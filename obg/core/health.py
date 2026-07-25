@@ -40,8 +40,8 @@ class SmartReadError(Exception):
     """Raised when smartctl cannot be run (missing tool, no permission, device open failed)."""
 
 
-def read_smart(device: str) -> SmartData | None:
-    result = run(["smartctl", "-a", device])
+def read_smart(device: str, timeout: int | None = 30) -> SmartData | None:
+    result = run(["smartctl", "-a", device], timeout=timeout)
     if result.returncode == 4:
         # Device open failed — usually permission / not found. Surface as an error
         # rather than silently returning None (which would force a FAILED classification).
