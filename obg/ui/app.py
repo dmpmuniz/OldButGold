@@ -449,6 +449,7 @@ class SmartTestScreen(Screen):
                 yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
                 yield Static("", classes="config-group")
                 yield Static("  Reading SMART attributes...", id="test-status", classes="config-group")
+                yield ProgressBar(total=100, show_eta=True, id="test-progress", classes="config-group")
                 yield Static("", id="smart-summary", classes="config-group")
             yield Static("  \u2191/\u2192 Continue   Esc Back", id="footer")
 
@@ -475,6 +476,13 @@ class SmartTestScreen(Screen):
         elif event.key in ("enter", "down", "up"):
             self.app.push_screen(DriveInfoScreen(self.disk, self._smart_data, resume=self.resume))
 
+    def _set_progress(self, pct: int) -> None:
+        try:
+            bar = self.query_one("#test-progress", ProgressBar)
+            bar.progress = pct
+        except Exception:
+            pass
+
     @work(thread=True)
     def _run_workflow(self) -> None:
         try:
@@ -485,13 +493,14 @@ class SmartTestScreen(Screen):
             # 1. load initial SMART data (with elapsed timer)
             t0 = time.monotonic()
             self.app.call_from_thread(self._set_status, "  Reading SMART data...")
+            self.app.call_from_thread(self._set_progress, 0)
             sd = None
             while sd is None:
                 try:
                     sd = read_smart(self.disk.device)
                 except Exception:
                     elapsed = int(time.monotonic() - t0)
-                    self.app.call_from_thread(self._set_status, f"  Reading SMART data... ({elapsed}s, timeout 30s)")
+                    self.app.call_from_thread(self._set_status, f"  Reading SMART data... ({elapsed}s)")
                     if elapsed >= 30:
                         self.app.call_from_thread(self._set_status, "  SMART read timed out \u2014 continuing without baseline")
                         break
@@ -499,6 +508,8 @@ class SmartTestScreen(Screen):
 
             self._smart_data = sd
             self.app.call_from_thread(self._show_summary, sd)
+            if sd is None:
+                return
             time.sleep(0.5)
 
             # 2. run short test with progress
@@ -510,7 +521,11 @@ class SmartTestScreen(Screen):
                 self.app.call_from_thread(self._set_status, f"  SMART test not supported: {err}")
                 return
             from obg.core.health import poll_smart_test
-            ok = poll_smart_test(self.disk.device, 300, on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]))
+            ok = poll_smart_test(
+                self.disk.device, 300,
+                on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]),
+                on_progress=lambda pct: self.app.call_from_thread(self._set_progress, pct),
+            )
             if not ok:
                 self.app.call_from_thread(self._set_status, "  SMART test timed out (5 min) \u2014 continuing with current data")
                 return

@@ -151,7 +151,8 @@ def run_short_test(device: str, on_output: Callable[[str], None] | None = None) 
 def poll_smart_test(
     device: str,
     timeout_seconds: int,
-    on_output: Callable[[str], None] | None,
+    on_output: Callable[[str], None] | None = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> bool:
     deadline = time.monotonic() + timeout_seconds
     poll_interval = 5
@@ -175,6 +176,8 @@ def poll_smart_test(
         if pct_match and on_output:
             pct = 100 - int(pct_match.group(1))
             elapsed = time.monotonic() - start_time
+            if on_progress:
+                on_progress(pct)
             if pct > last_pct and pct > 0:
                 rate = pct / elapsed
                 eta_s = (100 - pct) / rate if rate > 0 else 0
