@@ -490,31 +490,21 @@ class SmartTestScreen(Screen):
                 self.app.call_from_thread(self._set_status, "  Mock device \u2014 skipping SMART test")
                 return
 
-            # 1. load initial SMART data (with elapsed timer)
-            t0 = time.monotonic()
+            # 1. try initial SMART read (non-blocking, short timeout)
             self.app.call_from_thread(self._set_status, "  Reading SMART data...")
             self.app.call_from_thread(self._set_progress, 0)
-            sd = None
-            while sd is None:
-                try:
-                    sd = read_smart(self.disk.device)
-                except Exception:
-                    elapsed = int(time.monotonic() - t0)
-                    self.app.call_from_thread(self._set_status, f"  Reading SMART data... ({elapsed}s)")
-                    if elapsed >= 30:
-                        self.app.call_from_thread(self._set_status, "  SMART read timed out \u2014 continuing without baseline")
-                        break
-                    time.sleep(1)
-
-            self._smart_data = sd
-            self.app.call_from_thread(self._show_summary, sd)
-            if sd is None:
-                return
+            try:
+                sd = read_smart(self.disk.device, timeout=15)
+                self._smart_data = sd
+                self.app.call_from_thread(self._show_summary, sd)
+            except Exception:
+                self.app.call_from_thread(self._set_status, "  Initial SMART read failed \u2014 will retry after test")
             time.sleep(0.5)
 
-            # 2. run short test with progress
+            # 2. abort any running test, then run short test
             self.app.call_from_thread(self._set_status, "  Running SMART short self-test (2 min expected)...")
             from obg.utils.runner import run
+            run(["smartctl", "-X", self.disk.device], timeout=10)
             result = run(["smartctl", "-t", "short", self.disk.device], timeout=30)
             if result.returncode not in (0, 2):
                 err = (result.stderr or result.stdout or "unknown error").strip()[:80]
@@ -530,7 +520,7 @@ class SmartTestScreen(Screen):
                 self.app.call_from_thread(self._set_status, "  SMART test timed out (5 min) \u2014 continuing with current data")
                 return
 
-            # 3. refresh data
+            # 3. refresh data after test
             sd = read_smart(self.disk.device)
             self._smart_data = sd
             self.app.call_from_thread(self._show_summary, sd)
