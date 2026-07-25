@@ -483,6 +483,12 @@ class SmartTestScreen(Screen):
         except Exception:
             pass
 
+    def _set_status(self, msg: str) -> None:
+        try:
+            self.query_one("#test-status").update(msg)
+        except Exception:
+            pass
+
     def _run_workflow(self) -> None:
         try:
             from obg.utils.runner import run
@@ -503,34 +509,33 @@ class SmartTestScreen(Screen):
                 self.app.call_from_thread(self._set_status, f"  Initial read: {e}")
 
             # abort any running test, then run short test
+            self.app.call_from_thread(self._set_progress, 0)
             self.app.call_from_thread(self._set_status, "  Running SMART short self-test (2 min expected)...")
             run(["smartctl", "-X", self.disk.device], timeout=10)
             result = run(["smartctl", "-t", "short", self.disk.device], timeout=30)
             if result.returncode not in (0, 2):
                 self.app.call_from_thread(self._set_status, f"  SMART test not supported: {result.stdout[:80]}")
-                return
+            else:
+                ok = poll_smart_test(
+                    self.disk.device, 300,
+                    on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]),
+                    on_progress=lambda pct: self.app.call_from_thread(self._set_progress, pct),
+                )
+                if not ok:
+                    self.app.call_from_thread(self._set_status, "  SMART test timed out (5 min) \u2014 continuing with current data")
+                else:
+                    sd = read_smart(self.disk.device)
+                    self._smart_data = sd
+                    self.app.call_from_thread(self._show_summary, sd)
 
-            ok = poll_smart_test(
-                self.disk.device, 300,
-                on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]),
-                on_progress=lambda pct: self.app.call_from_thread(self._set_progress, pct),
-            )
-            if not ok:
-                self.app.call_from_thread(self._set_status, "  SMART test timed out (5 min) \u2014 continuing with current data")
-                return
-
-            # refresh data after test
-            sd = read_smart(self.disk.device)
-            self._smart_data = sd
-            self.app.call_from_thread(self._show_summary, sd)
+            # always advance to DriveInfoScreen
+            self.app.call_from_thread(self._push_drive_info)
         except Exception as e:
             self.app.call_from_thread(self._set_status, f"  Error: {e}")
+            self.app.call_from_thread(self._push_drive_info)
 
-    def _set_status(self, msg: str) -> None:
-        try:
-            self.query_one("#test-status").update(msg)
-        except Exception:
-            pass
+    def _push_drive_info(self) -> None:
+        self.app.push_screen(DriveInfoScreen(self.disk, self._smart_data, resume=self.resume))
 
 
 class DriveInfoScreen(Screen):
