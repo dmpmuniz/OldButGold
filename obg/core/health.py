@@ -162,8 +162,6 @@ def poll_smart_test(
         if result.returncode not in (0, 2):
             return False
         output = result.stdout
-        if "Completed without error" in output:
-            return True
         if "Self-test execution status:" in output:
             status_match = re.search(r"Self-test execution status:\s*\(\s*(\d+)\s*\)", output)
             if status_match:
@@ -173,6 +171,9 @@ def poll_smart_test(
                 if code >= 249:
                     time.sleep(poll_interval)
                     continue
+        else:
+            if "Completed without error" in output:
+                return True
         pct_match = re.search(r"(\d+)% of test remaining", output)
         if pct_match and on_output:
             pct = 100 - int(pct_match.group(1))

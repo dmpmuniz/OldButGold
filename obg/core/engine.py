@@ -145,7 +145,7 @@ def run_pipeline(
                         # Badblocks already completed in a prior run — don't re-run it.
                         skip = True
             if skip:
-                on_output("Surface Validation already completed — skipping")
+                on_output("RESUME: Surface Validation already completed in a prior session — skipping this step")
                 return
             if resume_offset == 0:
                 create_session(disk_info)

@@ -56,32 +56,37 @@ def main() -> None:
     if test_mode:
         logger.info("MAIN", "TEST MODE — Badblocks will scan ~1% of disk")
 
-    # Privilege escalation via pkexec
+    # Privilege escalation via sudo
     if os.geteuid() != 0:
-        # Determine how we were launched: as a frozen binary / script, or via `python -m obg`.
         is_module = sys.argv[0] in ("-m", "obg") or sys.modules["obg"].__file__.endswith("__main__.py") and "-m" in sys.argv
         if is_module:
             python = sys.executable
             base_cmd = [python, "-m", "obg"]
-            pkexec_args = base_cmd + sys.argv[1:]
+            sudo_cmd = ["sudo"] + base_cmd + sys.argv[1:]
         else:
             binary = os.path.abspath(sys.argv[0])
-            pkexec_args = [binary] + sys.argv[1:]
+            sudo_cmd = ["sudo", binary] + sys.argv[1:]
         if not sys.stdout.isatty():
-            for term_cmd in ("ptyxis", "gnome-terminal"):
+            for term_cmd in ("ptyxis", "gnome-terminal", "kgx", "blackbox"):
                 term = shutil.which(term_cmd)
                 if term:
                     logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
-                    os.execvp(term, [term, "-x", "pkexec " + " ".join(pkexec_args)])
-            for term_cmd in ("kgx", "konsole", "xfce4-terminal", "lxterminal", "xterm", "x-terminal-emulator"):
+                    try:
+                        os.execvp(term, [term, "--"] + sudo_cmd)
+                    except OSError:
+                        continue
+            for term_cmd in ("konsole", "xfce4-terminal", "lxterminal", "xterm", "alacritty", "kitty", "foot", "sakura", "terminator", "mate-terminal", "tilix", "terminology", "deepin-terminal", "x-terminal-emulator"):
                 term = shutil.which(term_cmd)
                 if term:
                     logger.info("MAIN", f"Not a TTY, launching terminal: {term}")
-                    os.execvp(term, [term, "-e", "pkexec"] + pkexec_args)
-            logger.error("MAIN", "No terminal emulator found. Run from a terminal: pkexec ./OldButGold")
+                    try:
+                        os.execvp(term, [term, "-e"] + sudo_cmd)
+                    except OSError:
+                        continue
+            logger.error("MAIN", "No terminal emulator found. Run from a terminal: sudo ./OldButGold")
             sys.exit(1)
-        logger.info("MAIN", "Not root, re-executing via pkexec")
-        os.execvp("pkexec", ["pkexec"] + pkexec_args)
+        logger.info("MAIN", "Not root, re-executing via sudo")
+        os.execvp("sudo", sudo_cmd)
 
     logger.info("MAIN", "Running with elevated privileges")
 

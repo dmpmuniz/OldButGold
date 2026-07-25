@@ -22,6 +22,29 @@ from obg.models.disk import DiskInfo
 from obg.models.operation import StepStatus, OperationResult
 
 
+def _get_mounted_partitions(device: str) -> list[tuple[str, str]]:
+    try:
+        with open("/proc/mounts") as f:
+            mounts = [l.split() for l in f.readlines() if l.strip()]
+    except OSError:
+        return []
+    result = []
+    for parts in mounts:
+        if len(parts) >= 2 and parts[0].startswith(device):
+            result.append((parts[0], parts[1]))
+    return result
+
+
+def _unmount_partitions(partitions: list[tuple[str, str]]) -> list[str]:
+    import subprocess as _sp
+    errors = []
+    for dev, mnt in partitions:
+        result = _sp.run(["umount", mnt], capture_output=True, text=True)
+        if result.returncode != 0:
+            errors.append(f"{mnt} ({dev}): {(result.stderr or result.stdout or 'failed').strip()}")
+    return errors
+
+
 class ObgApp(App):
     def __init__(self, test_mode: bool = False, mock_path: str | None = None):
         super().__init__()
@@ -30,7 +53,7 @@ class ObgApp(App):
 
     CSS = """
     Screen { background: #000000; align: center middle; }
-    #app-frame { width: 100%; height: 100%; max-width: 120; max-height: 40; border: solid #444444; background: #0a0a0a; layout: vertical; }
+    #app-frame { width: 100%; height: 100%; max-width: 150; max-height: 80; border: solid #444444; background: #0a0a0a; layout: vertical; }
     #header { dock: top; height: 1; background: #111111; color: #cccccc; border-bottom: solid #333333; padding: 0 1; }
     #body { height: 1fr; overflow-y: auto; }
     #footer { dock: bottom; height: 1; background: #111111; color: #666666; border-top: solid #333333; padding: 0 1; }
@@ -55,16 +78,16 @@ class ObgApp(App):
     .empty-msg { content-align: center middle; height: 100%; color: #666666; }
     .btn-row { height: 3; align: center middle; }
     .btn-row Button { width: 1fr; margin: 0 1; }
-    .steps-col { width: 38%; min-width: 25; }
-    .output-col { width: 62%; min-width: 30; }
+    .steps-col { width: 30%; min-width: 25; }
+    .output-col { width: 70%; min-width: 40; }
     .panel-box { border: solid #333333; margin: 0 1; padding: 0 1; }
     .dialog-overlay { background: rgba(0,0,0,0.7); align: center middle; }
     .dialog-box { width: 50; min-width: 40; border: solid #333333; background: #111111; padding: 1; }
     .progress-info { color: #aaaaaa; }
     ProgressBar { margin: 0 2; }
-    #output-scroll { max-height: 12; overflow-y: auto; }
+    #output-scroll { max-height: 30; overflow-y: auto; }
     #live-output { padding: 0 1; }
-    #progress-info { max-height: 8; overflow-y: auto; }
+    #progress-info { max-height: 12; overflow-y: auto; }
     .startup-btn { width: 1fr; margin: 0 1; }
     .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
     .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
@@ -281,6 +304,11 @@ class DriveSelectionScreen(Screen):
         disk = self._disks[self._selected]
         if not disk.is_supported:
             return
+        if disk.is_mounted and not disk.is_mock:
+            mounts = _get_mounted_partitions(disk.device)
+            if mounts:
+                self.app.push_screen(MountWarningScreen(disk, mounts))
+                return
         session = find_session(disk)
         if session:
             self.app.push_screen(SessionDecisionScreen(disk, session))
@@ -338,11 +366,77 @@ class SessionDecisionScreen(Screen):
             self.app.pop_screen()
 
 
+class MountWarningScreen(Screen):
+    def __init__(self, disk: DiskInfo, mounts: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self.disk = disk
+        self.mounts = mounts
+        self._unmount_errors: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Container(id="app-frame"):
+            yield Static(f"OldButGold v{__version__}  |  Drive Mounted", id="header")
+            with VerticalScroll(id="body"):
+                yield Static(f"  {self.disk.model}", classes="group-title")
+                yield Static(f"  {self.disk.device}  {self.disk.capacity_human}")
+                yield Static("")
+                yield Static("  This drive has mounted partitions:", classes="warning")
+                for dev, mnt in self.mounts:
+                    yield Static(f"  \u2022 {dev}  \u2192  {mnt}", classes="config-group")
+                yield Static("")
+                yield Static("  All data on these partitions will be", classes="config-group")
+                yield Static("  inaccessible until remounted.", classes="config-group")
+                yield Static("", id="unmount-status")
+            yield Horizontal(
+                Button(" Unmount & Continue ", id="unmount-btn"),
+                Button(" Back ", id="back-btn"),
+                classes="btn-row",
+            )
+            yield Static("  Esc Back   Enter Unmount", id="footer")
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.app.pop_screen()
+        elif event.key == "enter":
+            self._do_unmount()
+
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "unmount-btn":
+            self._do_unmount()
+        elif event.button.id == "back-btn":
+            self.app.pop_screen()
+
+    @work(thread=True)
+    def _do_unmount(self) -> None:
+        self.app.call_from_thread(self._set_status, "  Unmounting...", "info")
+        errs = _unmount_partitions(self.mounts)
+        if errs:
+            self.app.call_from_thread(self._set_status, "  " + "\n  ".join(errs), "failed")
+            return
+        self.app.call_from_thread(self._proceed)
+
+    def _set_status(self, msg: str, cls: str = "info") -> None:
+        try:
+            self.query_one("#unmount-status").update(msg)
+            self.query_one("#unmount-status").remove_class("info", "failed")
+            self.query_one("#unmount-status").add_class(cls)
+        except Exception:
+            pass
+
+    def _proceed(self) -> None:
+        session = find_session(self.disk)
+        if session:
+            self.app.push_screen(SessionDecisionScreen(self.disk, session))
+        else:
+            self.app.push_screen(SmartTestScreen(self.disk))
+
+
 class SmartTestScreen(Screen):
     def __init__(self, disk: DiskInfo, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
         self.resume = resume
+        self._smart_data = None
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
@@ -355,26 +449,61 @@ class SmartTestScreen(Screen):
                 yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
                 yield Static("", classes="config-group")
                 yield Static("  Reading SMART attributes...", id="test-status", classes="config-group")
-            yield Static("  Please wait...", id="footer")
+                yield Static("", id="smart-summary", classes="config-group")
+            yield Static("  \u2191/\u2192 Continue   Esc Back", id="footer")
 
     def on_mount(self) -> None:
         self._run_test()
+
+    def _show_summary(self, sd) -> None:
+        if sd is None:
+            self._set_status("  SMART data not available")
+            return
+        lines = [
+            f"  Health: {sd.overall_health}",
+            f"  Temperature: {sd.temperature or 'N/A'} \u00b0C",
+            f"  Power-on Hours: {sd.power_on_hours or 'N/A'}",
+            f"  Reallocated Sectors: {sd.reallocated_sectors}",
+            f"  Pending Sectors: {sd.pending_sectors}",
+            f"  Uncorrectable Sectors: {sd.uncorrectable_sectors}",
+        ]
+        self._set_status("\n".join(lines))
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.app.pop_screen()
+        elif event.key in ("enter", "down", "up"):
+            self.app.push_screen(DriveInfoScreen(self.disk, self._smart_data, resume=self.resume))
 
     @work(thread=True)
     def _run_test(self) -> None:
         try:
             if self.disk.is_mock:
-                self.app.call_from_thread(self._set_status, "  Mock device — skipping SMART test")
+                self.app.call_from_thread(self._set_status, "  Mock device \u2014 skipping SMART test")
                 self.app.call_from_thread(self._done, None)
                 return
             self.app.call_from_thread(self._set_status, "  Running SMART short self-test...")
-            from obg.core.health import run_short_test
-            run_short_test(self.disk.device, on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]))
+            from obg.utils.runner import run
+            from obg.core.health import poll_smart_test
+            result = run(["smartctl", "-t", "short", self.disk.device])
+            if result.returncode not in (0, 2):
+                err = (result.stderr or result.stdout or "unknown error").strip()[:80]
+                self.app.call_from_thread(self._set_status, f"  SMART test not supported: {err}")
+                time.sleep(2)
+                self.app.call_from_thread(self._set_status, "  Collecting SMART data...")
+                sd = read_smart(self.disk.device)
+                self.app.call_from_thread(self._done, sd)
+                return
+            ok = poll_smart_test(self.disk.device, 300, on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]))
+            if not ok:
+                self.app.call_from_thread(self._set_status, "  SMART test did not complete in time \u2014 continuing with current data")
+                time.sleep(2)
             self.app.call_from_thread(self._set_status, "  Collecting SMART data...")
             sd = read_smart(self.disk.device)
             self.app.call_from_thread(self._done, sd)
         except Exception as e:
             self.app.call_from_thread(self._set_status, f"  SMART read failed: {e}")
+            time.sleep(2)
             self.app.call_from_thread(self._done, None)
 
     def _set_status(self, msg: str) -> None:
@@ -384,7 +513,8 @@ class SmartTestScreen(Screen):
             pass
 
     def _done(self, smart_data) -> None:
-        self.app.push_screen(DriveInfoScreen(self.disk, smart_data, resume=self.resume))
+        self._smart_data = smart_data
+        self.app.call_from_thread(self._show_summary, smart_data)
 
 
 class DriveInfoScreen(Screen):
@@ -960,6 +1090,9 @@ class CompleteScreen(Screen):
                     yield Static("")
                     for reason in r.classification.reasons:
                         yield Static(f"  - {reason}")
+                    for s in r.steps:
+                        if s.status in (StepStatus.FAILED, StepStatus.SKIPPED) and s.error:
+                            yield Static(f"  \u2192 {s.name}: {s.error[:200]}", classes="failed")
                     yield Static("")
                     dur = r.total_duration_seconds
                     h = int(dur // 3600)

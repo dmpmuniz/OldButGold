@@ -5,9 +5,9 @@ from obg.utils.runner import run
 
 
 def create_gpt(device: str) -> None:
-    result = run(["sgdisk", "--zap-all", device])
+    result = run(["sgdisk", "-o", device])
     if result.returncode != 0:
-        raise RuntimeError(f"sgdisk --zap-all failed: {result.stderr}")
+        raise RuntimeError(f"sgdisk -o failed: {result.stderr}")
 
 
 def create_partition(device: str) -> str:

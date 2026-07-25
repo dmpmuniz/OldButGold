@@ -21,10 +21,10 @@ RELEASE_NAME = f"OldButGold-v{__version__}"
 def clean():
     for d in [BUILD_DIR, DIST_DIR]:
         if d.exists():
-            shutil.rmtree(d)
+            shutil.rmtree(d, ignore_errors=True)
     release = RELEASE_DIR / RELEASE_NAME
     if release.exists():
-        shutil.rmtree(release)
+        shutil.rmtree(release, ignore_errors=True)
     zip_path = RELEASE_DIR / f"{RELEASE_NAME}.zip"
     if zip_path.exists():
         zip_path.unlink()
