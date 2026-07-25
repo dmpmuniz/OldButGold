@@ -168,9 +168,6 @@ def poll_smart_test(
                 code = int(status_match.group(1))
                 if code == 0:
                     return True
-                if code >= 249:
-                    time.sleep(poll_interval)
-                    continue
         else:
             if "Completed without error" in output:
                 return True
