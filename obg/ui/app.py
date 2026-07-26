@@ -86,10 +86,8 @@ class ObgApp(App):
     .dialog-box { width: 50; min-width: 40; border: solid #333333; background: #111111; padding: 1; }
     .progress-info { color: #aaaaaa; }
     ProgressBar { margin: 0 2; }
-    #output-scroll { max-height: 30; overflow-y: auto; }
-    #live-output { padding: 0 1; }
-    #metrics-box { border: solid #333333; margin: 0 1; padding: 0 1; height: 1fr; min-height: 10; }
-    #metrics-list { margin: 0 0 0 0; }
+    #metrics-box { border: solid #333333; margin: 0 1; padding: 0 1; min-height: 8; }
+    #metrics-list { color: #aaaaaa; }
     .startup-btn { width: 1fr; margin: 0 1; }
     .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
     .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
@@ -743,7 +741,7 @@ class ExecutionScreen(Screen):
                             self._step_widgets[s] = w
                             yield w
                     with VerticalScroll(classes="output-col"):
-                        with VerticalScroll(id="metrics-box", classes="panel-box", can_focus=False):
+                        with Container(id="metrics-box"):
                             yield ProgressBar(total=100, id="bb-progress", show_eta=False)
                             yield Static("", id="metrics-list")
             yield Static("  [C] Cancel  —  Elapsed: 00:00:00", id="footer")
