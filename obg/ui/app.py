@@ -758,6 +758,7 @@ class ExecutionScreen(Screen):
             return
         e = int(time.monotonic() - self._start_time)
         h, m, s = e // 3600, (e % 3600) // 60, e % 60
+        self._update_progress()
         try:
             self.query_one("#footer").update(f"  [C] Cancel  \u2014  Elapsed: {h:02d}:{m:02d}:{s:02d}")
         except Exception:

@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
 
-_tool_dir = Path(__file__).resolve().parent / "tools"
+_tool_dir = Path(os.getcwd()) / "tools"
 _tool_datas = []
 if _tool_dir.is_dir():
     for f in _tool_dir.iterdir():

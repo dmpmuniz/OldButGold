@@ -99,11 +99,18 @@ def run(
         buf = b""
         lines = []
         fd = proc.stdout.fileno()
+        _last_progress = b""
         while True:
             chunk = os.read(fd, 4096)
             if not chunk:
                 break
             buf += chunk
+            while b"\x08" in buf:
+                pos = buf.find(b"\x08")
+                if pos > 0:
+                    buf = buf[:pos - 1] + buf[pos + 1:]
+                else:
+                    buf = buf[1:]
             while b"\n" in buf or b"\r" in buf:
                 idx = -1
                 nidx = buf.find(b"\n")
@@ -119,6 +126,10 @@ def run(
                     lines.append(part)
                     on_output(part)
                 buf = buf[idx + 1:]
+            nxt = buf.strip()
+            if b"% done" in nxt and nxt != _last_progress:
+                _last_progress = nxt
+                on_output(nxt.decode("utf-8", errors="replace"))
         remaining = buf.decode("utf-8", errors="replace").strip()
         if remaining:
             lines.append(remaining)
