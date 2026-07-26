@@ -88,7 +88,8 @@ class ObgApp(App):
     ProgressBar { margin: 0 2; }
     #output-scroll { max-height: 30; overflow-y: auto; }
     #live-output { padding: 0 1; }
-    #progress-info { max-height: 12; overflow-y: auto; }
+    #metrics-box { border: solid #333333; margin: 0 1; padding: 0 1; height: 1fr; min-height: 10; }
+    #metrics-list { margin: 0 0 0 0; }
     .startup-btn { width: 1fr; margin: 0 1; }
     .startup-btn.selected { background: #1a3a1a; border: solid #00ff00; }
     .metric-box { border: solid #333333; margin: 0 1 1 1; padding: 0 1; width: 1fr; }
@@ -133,7 +134,7 @@ class StartupScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  HDD Revival Toolkit", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Startup", id="header")
             with VerticalScroll(id="body"):
                 yield Static("", classes="config-group")
                 yield Static("  OLD BUT GOLD", classes="group-title")
@@ -213,7 +214,7 @@ class DriveSelectionScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Select Drive", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Select Drive", id="header")
             with VerticalScroll(id="body"):
                 pass
             yield Horizontal(
@@ -327,7 +328,7 @@ class SessionDecisionScreen(Screen):
         total_blocks = self.disk.capacity_bytes // 4096 if self.disk.capacity_bytes else 1
         pct = min(99, int(self.session.get("badblocks_offset", 0) / total_blocks * 100))
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Session Recovery", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Session Recovery", id="header")
             with VerticalScroll(id="body"):
                 yield Static("  Interrupted Validation Session", classes="group-title")
                 yield Static("")
@@ -376,7 +377,7 @@ class MountWarningScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Drive Mounted", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Drive Mounted", id="header")
             with VerticalScroll(id="body"):
                 yield Static(f"  {self.disk.model}", classes="group-title")
                 yield Static(f"  {self.disk.device}  {self.disk.capacity_human}")
@@ -444,7 +445,7 @@ class DriveInfoScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  {self.disk.model}", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Drive Info  /  {self.disk.model}", id="header")
             with VerticalScroll(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="panel-box"):
@@ -547,7 +548,7 @@ class ValidationConfigScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Configuration", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Configuration", id="header")
             with VerticalScroll(id="body"):
                 yield Static("  Validation Profile", classes="group-title")
                 for p in self.PROFILES:
@@ -659,7 +660,7 @@ class FinalConfirmationScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Confirm", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Confirm", id="header")
             with VerticalScroll(id="body"):
                 yield Static("  Validation Summary", classes="group-title")
                 yield Static(f"  Drive:  {self.disk.model}")
@@ -702,19 +703,6 @@ class FinalConfirmationScreen(Screen):
 
 
 class ExecutionScreen(Screen):
-    STEP_DESCRIPTIONS = {
-        "Drive Identification": "Verifying device identity and accessibility...\nChecking that the expected drive is present and reachable.",
-        "Initial SMART Self-Test": "Running SMART short self-test (Snapshot A)...\nThe drive firmware performs an internal diagnostic scan.\nEstimated duration: up to 2 minutes.",
-        "Surface Scan (Badblocks)": "Scanning the entire disk surface for bad sectors.\nThis is the longest step and may take hours depending on disk size and speed.",
-        "Final SMART Self-Test": "Running final SMART short self-test (Snapshot B)...\nChecking for changes after surface validation.",
-        "SMART Comparison": "Comparing SMART snapshots taken before and after validation...\nDetecting changes caused by the validation process.",
-        "Create GPT": "Creating a new GPT partition table...",
-        "Create Partition": "Creating a primary partition spanning the full disk capacity...",
-        "Format Filesystem": "Formatting the partition with the selected filesystem...",
-        "Generate Report": "Compiling validation data and generating the final report...",
-        "Session Cleanup": "Cleaning up temporary session data...",
-    }
-
     def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
@@ -733,7 +721,6 @@ class ExecutionScreen(Screen):
         self._bb_errors = (0, 0, 0)
         self._bb_bad_count = 0
         self._bb_test_mode = False
-        self._output_lines: list[str] = []
         self._last_pct_time = 0.0
         self._last_pct = 0.0
         self._bb_blocksize = 4096
@@ -746,7 +733,7 @@ class ExecutionScreen(Screen):
     def compose(self) -> ComposeResult:
         mode = "  [TEST MODE]" if self.app.test_mode else ""
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Validating{mode}", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Validation{mode}", id="header")
             with VerticalScroll(id="body"):
                 with Horizontal():
                     with VerticalScroll(classes="steps-col"):
@@ -756,12 +743,9 @@ class ExecutionScreen(Screen):
                             self._step_widgets[s] = w
                             yield w
                     with VerticalScroll(classes="output-col"):
-                        yield Static("  Progress", classes="group-title")
-                        yield ProgressBar(total=100, id="bb-progress", show_eta=False)
-                        yield Static("", id="progress-info", classes="progress-info")
-                        yield Static("  Output", classes="group-title")
-                        with VerticalScroll(id="output-scroll", classes="panel-box"):
-                            yield Static("", id="live-output", classes="progress-info")
+                        with VerticalScroll(id="metrics-box", classes="panel-box", can_focus=False):
+                            yield ProgressBar(total=100, id="bb-progress", show_eta=False)
+                            yield Static("", id="metrics-list")
             yield Static("  [C] Cancel  —  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
@@ -806,7 +790,6 @@ class ExecutionScreen(Screen):
             self._show_step_info(name)
 
     def _show_step_info(self, name: str) -> None:
-        desc = self.STEP_DESCRIPTIONS.get(name, name)
         self._bb_operation = name
         self._bb_progress = 0
         self._bb_eta = ""
@@ -814,7 +797,7 @@ class ExecutionScreen(Screen):
         self._bb_errors = (0, 0, 0)
         try:
             self.query_one("#bb-progress", ProgressBar).update(progress=0)
-            self.query_one("#progress-info").update(f"  {desc}")
+            self.query_one("#metrics-list").update("")
         except Exception:
             pass
 
@@ -822,14 +805,6 @@ class ExecutionScreen(Screen):
         self.app.call_from_thread(self._append, line)
 
     def _append(self, line: str) -> None:
-        # Always show raw output in the live-output panel
-        try:
-            self._output_lines.append(line)
-            if len(self._output_lines) > 200:
-                self._output_lines = self._output_lines[-200:]
-            self.query_one("#live-output").update("\n".join(self._output_lines[-20:]))
-        except Exception:
-            pass
         if "TEST MODE" in line:
             self._bb_test_mode = True
             self._bb_operation = line.strip()
@@ -838,17 +813,12 @@ class ExecutionScreen(Screen):
         if "RESUME" in line and "resuming from" in line:
             self._update_progress()
             return
-        if "read-only verification pass" in line:
-            self._bb_operation = "Reading (non-destructive)"
-            self._bb_pattern = "—"
-            self._update_progress()
-            return
         if line.startswith("SMART comparison completed"):
             self._bb_operation = "SMART Comparison"
             self._bb_progress = 100
             self._update_progress()
             try:
-                self.query_one("#progress-info").update(line.replace("SMART comparison completed:\n", "  ").replace("\n", "\n  "))
+                self.query_one("#metrics-list").update(line.replace("SMART comparison completed:\n", "").replace("\n", "\n"))
             except Exception:
                 pass
             return
@@ -867,8 +837,8 @@ class ExecutionScreen(Screen):
             pat = pm.group(1)
             if pat:
                 self._bb_pattern = pat
-                self._bb_operation = f"Writing pattern {pat}"
-            elif self._bb_operation in ("Preparing...", "SMART Short Self-Test", "SMART test:", "Reading (non-destructive)", "Surface Scan (Badblocks)", "Surface Scan"):
+                self._bb_operation = f"Writing {pat}"
+            elif self._bb_operation in ("Preparing...", "SMART Short Self-Test", "SMART test:", "Surface Scan (Badblocks)", "Surface Scan"):
                 self._bb_operation = "Writing (destructive)"
             now = time.monotonic()
             pct = float(pm.group(2))
@@ -905,34 +875,33 @@ class ExecutionScreen(Screen):
         except Exception:
             pass
         pct = self._bb_progress
-        total = self._bb_total_blocks
-        cur_block = int(total * pct / 100) if total > 0 else 0
-        cur_sector = cur_block * (self._bb_blocksize // 512)
         r, w, c = self._bb_errors
-        hdr = "  [TEST MODE]" if self._bb_test_mode else ""
-        is_badblocks = any(kw in self._bb_operation for kw in ("Writing", "Reading", "pattern"))
-        lines = [f"  {self._bb_operation}{hdr}"]
-        if is_badblocks:
-            lines += [
-                f"  Pattern:   {self._bb_pattern}",
-                f"  Progress:  {pct:.1f}%",
-                f"  Block:     {cur_block:,} / {total:,}",
-                f"  Sector:    {cur_sector:,}",
-                f"  Speed:     {self._bb_speed:.1f} MB/s" if self._bb_speed > 0 else "  Speed:     —",
-                f"  Elapsed:   {self._bb_elapsed_str}",
-                f"  ETA:       {self._bb_eta}" if self._bb_eta else "  ETA:       —",
-                f"  Bad:       Found {self._bb_bad_count:,}" if self._bb_bad_count > 0 else f"  Bad:       {self._bb_bad_count}",
-                f"  Errors:    {r}/{w}/{c} (R/W/C)" if r > 0 or w > 0 or c > 0 else None,
-            ]
-        elif pct > 0:
-            lines.append(f"  Progress:  {pct:.0f}%")
-        desc = self.STEP_DESCRIPTIONS.get(self._bb_operation, "")
-        if desc:
-            lines.append(f"")
-            lines.append(f"  {desc}")
-        info = "\n".join(l for l in lines if l is not None)
+        mode_tag = "  [TEST MODE]" if self._bb_test_mode else ""
+        has_errors = r > 0 or w > 0 or c > 0
+        is_badblocks = any(kw in self._bb_operation for kw in ("Writing", "pattern"))
+        items = [
+            ("Operation", self._bb_operation + mode_tag),
+        ]
+        if is_badblocks or pct > 0:
+            items.append(("Progress", f"{pct:.1f}%"))
+        if self._bb_eta:
+            items.append(("ETA", self._bb_eta))
+        if self._bb_speed > 0:
+            items.append(("Speed", f"{self._bb_speed:.1f} MB/s"))
+        if self._bb_pattern and is_badblocks:
+            items.append(("Pattern", self._bb_pattern))
+        if self._bb_elapsed_str and is_badblocks:
+            items.append(("Elapsed", self._bb_elapsed_str))
+        if self._bb_bad_count > 0:
+            items.append(("Bad blocks", f"{self._bb_bad_count:,}"))
+        elif is_badblocks:
+            items.append(("Bad blocks", "None"))
+        if has_errors:
+            items.append(("Errors", f"{r}/{w}/{c} (R/W/C)"))
+        pad = max((len(k) for k, _ in items), default=0) + 2
+        lines = [f"  {k:<{pad}}{v}" for k, v in items]
         try:
-            self.query_one("#progress-info").update(info)
+            self.query_one("#metrics-list").update("\n".join(lines))
         except Exception:
             pass
 
@@ -981,7 +950,7 @@ class CompleteScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  Validation Complete", id="header")
+            yield Static(f"OldButGold v{__version__}  /  Complete", id="header")
             with VerticalScroll(id="body"):
                 if self.result:
                     r = self.result
