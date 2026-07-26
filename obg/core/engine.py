@@ -3,6 +3,7 @@ import os
 import time
 from datetime import datetime
 from typing import Callable
+from obg.utils.logger import error as log_error
 from obg.models.disk import DiskInfo, DiskSnapshot, SmartDelta
 from obg.models.operation import StepStatus, StepResult, OperationResult
 from obg.models.classification import Classification, ClassificationResult
@@ -303,8 +304,8 @@ def _build_result(
         error_text = "\n".join(error_lines) if error_lines else "Pipeline did not complete successfully"
         try:
             report_path = generate_error_log(disk_info.device, disk_info.model, error_text, steps)
-        except Exception:
-            pass
+        except Exception as e:
+            log_error("REPORT", f"Failed to generate error log: {e}")
     return OperationResult(
         success=success, cancelled=cancelled, steps=steps,
         snapshot=snapshot, classification=classification,
