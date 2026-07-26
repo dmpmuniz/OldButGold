@@ -804,7 +804,7 @@ class ExecutionScreen(Screen):
     def _append(self, line: str) -> None:
         if "TEST MODE" in line:
             self._bb_test_mode = True
-            self._bb_operation = line.strip()
+            self._bb_operation = "Writing (test mode)"
             self._update_progress()
             return
         if "RESUME" in line and "resuming from" in line:
