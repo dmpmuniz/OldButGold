@@ -7,7 +7,7 @@ from obg.core.partitioner import create_gpt, create_partition
 def test_create_gpt_calls_sgdisk(mock_run):
     mock_run.return_value = MagicMock(returncode=0)
     create_gpt("/dev/sdb")
-    mock_run.assert_called_once_with(["sgdisk", "--zap-all", "/dev/sdb"])
+    mock_run.assert_called_once_with(["sgdisk", "-o", "/dev/sdb"])
 
 
 @patch("obg.core.partitioner.run")
@@ -21,7 +21,7 @@ def test_create_partition_calls_sgdisk(mock_run):
 @patch("obg.core.partitioner.run")
 def test_create_gpt_failure_raises(mock_run):
     mock_run.return_value = MagicMock(returncode=1, stderr="error")
-    with pytest.raises(RuntimeError, match="sgdisk --zap-all failed"):
+    with pytest.raises(RuntimeError, match="sgdisk -o failed"):
         create_gpt("/dev/sdb")
 
 

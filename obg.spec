@@ -2,15 +2,23 @@
 
 import os
 import sys
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
+
+_tool_dir = Path(__file__).resolve().parent / "tools"
+_tool_datas = []
+if _tool_dir.is_dir():
+    for f in _tool_dir.iterdir():
+        if f.is_file() and not f.name.startswith("."):
+            _tool_datas.append((str(f), "tools"))
 
 a = Analysis(
     ['obg/__main__.py'],
     pathex=[os.getcwd()],
     binaries=[],
-    datas=collect_data_files('rich._unicode_data'),
+    datas=collect_data_files('rich._unicode_data') + _tool_datas,
     hiddenimports=collect_submodules('rich._unicode_data'),
     hookspath=[],
     hooksconfig={},
