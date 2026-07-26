@@ -23,7 +23,13 @@ def run_badblocks(
     profile: str = "recommended",
     resume_offset: float = 0,
 ) -> int:
-    command = ["badblocks", "-w", "-s", "-v", device]
+    def _base() -> list[str]:
+        cmd = ["badblocks", "-w", "-s", "-v"]
+        if profile == "recommended":
+            cmd += ["-t", "0x55"]
+        cmd += [device]
+        return cmd
+
     if resume_offset > 0:
         MARGIN_PCT = 10
         total_blocks = _get_block_count(device)
@@ -32,16 +38,18 @@ def run_badblocks(
         if test_mode:
             limit = max(1000, int(total_blocks * 0.01))
             blocks_count = limit
-            command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(blocks_count), str(start_block)]
+            command = _base() + ["-b", "4096", str(blocks_count), str(start_block)]
         else:
             blocks_count = total_blocks - start_block
-            command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(blocks_count), str(start_block)]
+            command = _base() + ["-b", "4096", str(blocks_count), str(start_block)]
         on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}, checking {blocks_count} blocks)")
     elif test_mode:
         total_blocks = _get_block_count(device)
         limit = max(1000, int(total_blocks * 0.01))
-        command = ["badblocks", "-w", "-s", "-v", "-b", "4096", device, str(limit), "0"]
+        command = _base() + ["-b", "4096", str(limit), "0"]
         on_output(f"TEST MODE: destructive test of {limit} of {total_blocks} blocks (~1%)")
+    else:
+        command = _base()
 
     last_checkpoint = [-1]
     def _line_handler(offset_base=0):
