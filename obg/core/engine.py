@@ -14,7 +14,7 @@ from obg.core.scanner import run_badblocks
 from obg.core.partitioner import create_gpt, create_partition
 from obg.core.formatter import format_filesystem
 from obg.core.classifier import classify
-from obg.core.reporter import generate_report
+from obg.core.reporter import generate_report, generate_error_log
 from obg.core.lock import acquire_lock, release_lock
 from obg.core.session import create_session, find_session, update_checkpoint, update_stage, complete_session, save_smart_snapshot_a, load_smart_snapshot_a
 
@@ -295,6 +295,16 @@ def _build_result(
             )
         else:
             classification = classify(snapshot)
+    if not success and report_path is None:
+        error_lines = []
+        for s in steps:
+            if s.status in (StepStatus.FAILED, StepStatus.SKIPPED):
+                error_lines.append(f"{s.name}: {s.error or 'failed'}")
+        error_text = "\n".join(error_lines) if error_lines else "Pipeline did not complete successfully"
+        try:
+            report_path = generate_error_log(disk_info.device, disk_info.model, error_text, steps)
+        except Exception:
+            pass
     return OperationResult(
         success=success, cancelled=cancelled, steps=steps,
         snapshot=snapshot, classification=classification,
