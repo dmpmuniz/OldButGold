@@ -538,6 +538,10 @@ class ValidationConfigScreen(Screen):
         self.config = load_config()
         self.FS_OPTIONS = VALID_FILESYSTEMS
         self.PROFILES = [p.capitalize() for p in VALID_PROFILES]
+        self.PROFILE_DESCRIPTIONS = {
+            "recommended": "Optimized validation created for OldButGold.\nUses two destructive validation patterns (0xAA and 0x55)\nwith 4 KiB blocks for significantly faster validation.",
+            "extended": "Original native badblocks destructive validation\nusing all default patterns for maximum confidence.",
+        }
         self._profile_idx = next((i for i, p in enumerate(VALID_PROFILES) if p == self.config["profile"]), 0)
         self._fs_idx = self.FS_OPTIONS.index(self.config["filesystem"]) if self.config["filesystem"] in self.FS_OPTIONS else 0
 
@@ -549,6 +553,7 @@ class ValidationConfigScreen(Screen):
                 for p in self.PROFILES:
                     marker = "(*)" if p.lower() == self.PROFILES[self._profile_idx].lower() else "( )"
                     yield Static(f"  {marker} {p}", id=f"prof-{p.lower()}", classes="config-group")
+                yield Static("", id="profile-desc")
                 yield Static("  Filesystem", classes="config-label")
                 for f in self.FS_OPTIONS:
                     marker = "(*)" if f == self.FS_OPTIONS[self._fs_idx] else "( )"
@@ -567,6 +572,7 @@ class ValidationConfigScreen(Screen):
             self.query_one("#label-input").focus()
         except Exception:
             pass
+        self._update_description()
 
     def on_key(self, event) -> None:
         if event.key == "up" and not isinstance(self.focused, Input):
@@ -616,6 +622,15 @@ class ValidationConfigScreen(Screen):
                 self.query_one(f"#fs-{f}").update(f"  {marker} {f}")
             except Exception:
                 pass
+        self._update_description()
+
+    def _update_description(self) -> None:
+        name = VALID_PROFILES[self._profile_idx]
+        desc = self.PROFILE_DESCRIPTIONS.get(name, "")
+        try:
+            self.query_one("#profile-desc").update(f"  {desc}")
+        except Exception:
+            pass
 
     def action_go_back(self) -> None:
         self.app.pop_screen()

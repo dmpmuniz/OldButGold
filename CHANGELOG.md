@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.1
+
+- Fix badblocks validation profiles to match official documentation
+- Recommended: `badblocks -wsv -b 4096 -t 0xaa -t 0x55 <device>` (2 patterns, 4K blocks)
+- Extended: `badblocks -wsv <device>` (native 4 patterns, no -b, no -t)
+- Remove Extended read-only verification pass
+- Centralize command building in `scanner.get_profile_command()`
+- Add profile descriptions to configuration screen
+- Update test to match correct Extended profile command
+
 ## v0.7.7 (unreleased)
 
 - Fix runner.py: bundled `lib/` path leaking into `LD_LIBRARY_PATH` during source-mode execution, causing system commands to fail with symbol lookup errors.

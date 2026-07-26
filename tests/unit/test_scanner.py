@@ -47,11 +47,10 @@ def test_checkpoint_callback_fired(mock_run):
 
 
 @patch("obg.core.scanner.run")
-def test_extended_profile_runs_read_pass(mock_run):
+def test_extended_profile_command(mock_run):
     mock_run.return_value = MagicMock(
         returncode=0, stdout="", stderr="0, 0 bad blocks found\n"
     )
     run_badblocks("/dev/sdb", MagicMock(), profile="extended")
-    assert mock_run.call_count == 2
-    read_cmd = mock_run.call_args_list[1][0][0]
-    assert read_cmd == ["badblocks", "-n", "-s", "-v", "/dev/sdb"]
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["badblocks", "-w", "-s", "-v", "/dev/sdb"]
