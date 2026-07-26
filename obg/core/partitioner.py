@@ -6,13 +6,13 @@ from obg.utils.runner import run
 
 def create_gpt(device: str) -> None:
     result = run(["sgdisk", "-o", device])
-    if result.returncode != 0:
+    if result.returncode not in (0, 2):
         raise RuntimeError(f"sgdisk -o failed: {result.stderr}")
 
 
 def create_partition(device: str) -> str:
     result = run(["sgdisk", "-n", "1:0:0", "-t", "1:8300", device])
-    if result.returncode != 0:
+    if result.returncode not in (0, 2):
         raise RuntimeError(f"sgdisk create partition failed: {result.stderr}")
 
     is_file = os.path.isfile(device)
