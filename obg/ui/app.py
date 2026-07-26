@@ -847,21 +847,20 @@ class ExecutionScreen(Screen):
                 self._bb_eta = f"{sm.group(2)}m{sm.group(3)}s"
             self._update_progress()
             return
-        pm = re.search(r'(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed', line)
+        pm = re.search(r'(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed\.?\s*(?:\((\d+)/(\d+)/(\d+)\s*errors?\))?', line)
         if pm:
             pat = pm.group(1)
             if pat:
                 self._bb_pattern = pat
                 self._bb_operation = f"Writing pattern {pat}"
-            elif self._bb_operation in ("Preparing...", "SMART Short Self-Test", "Reading (non-destructive)"):
+            elif self._bb_operation in ("Preparing...", "SMART Short Self-Test", "SMART test:", "Reading (non-destructive)", "Surface Scan (Badblocks)", "Surface Scan"):
                 self._bb_operation = "Writing (destructive)"
             now = time.monotonic()
             pct = float(pm.group(2))
             self._bb_progress = pct
             self._bb_elapsed_str = pm.group(3)
-            em = re.search(r'\((\d+)/(\d+)/(\d+)\s*errors?\)', line)
-            if em:
-                self._bb_errors = (int(em.group(1)), int(em.group(2)), int(em.group(3)))
+            if pm.group(4):
+                self._bb_errors = (int(pm.group(4)), int(pm.group(5)), int(pm.group(6)))
             if pct > self._last_pct:
                 elapsed_since = now - self._last_pct_time
                 pct_delta = pct - self._last_pct
