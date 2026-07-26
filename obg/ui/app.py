@@ -314,7 +314,7 @@ class DriveSelectionScreen(Screen):
         if session:
             self.app.push_screen(SessionDecisionScreen(disk, session))
         else:
-            self.app.push_screen(SmartTestScreen(disk))
+            self.app.push_screen(DriveInfoScreen(disk))
 
 
 class SessionDecisionScreen(Screen):
@@ -353,14 +353,14 @@ class SessionDecisionScreen(Screen):
         if event.key == "escape":
             self.app.pop_screen()
         elif event.key == "enter":
-            self.app.push_screen(SmartTestScreen(self.disk, resume=True))
+            self.app.push_screen(ValidationConfigScreen(self.disk, resume=True))
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "recover-btn":
-            self.app.push_screen(SmartTestScreen(self.disk, resume=True))
+            self.app.push_screen(ValidationConfigScreen(self.disk, resume=True))
         elif event.button.id == "restart-btn":
             complete_session(self.disk)
-            self.app.push_screen(SmartTestScreen(self.disk))
+            self.app.push_screen(DriveInfoScreen(self.disk))
         elif event.button.id == "details-btn":
             self.app.push_screen(DriveInfoScreen(self.disk, None))
         elif event.button.id == "back-btn":
@@ -429,113 +429,10 @@ class MountWarningScreen(Screen):
         if session:
             self.app.push_screen(SessionDecisionScreen(self.disk, session))
         else:
-            self.app.push_screen(SmartTestScreen(self.disk))
+            self.app.push_screen(DriveInfoScreen(self.disk))
 
 
-class SmartTestScreen(Screen):
-    def __init__(self, disk: DiskInfo, resume: bool = False) -> None:
-        super().__init__()
-        self.disk = disk
-        self.resume = resume
-        self._smart_data = None
 
-    def compose(self) -> ComposeResult:
-        with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  |  SMART Data Collection", id="header")
-            with VerticalScroll(id="body"):
-                yield Static("  Collecting SMART data...", classes="group-title")
-                yield Static("", classes="config-group")
-                yield Static(f"  Device: {self.disk.device}", classes="config-group")
-                yield Static(f"  Model:  {self.disk.model}", classes="config-group")
-                yield Static(f"  Serial: {self.disk.serial}", classes="config-group")
-                yield Static("", classes="config-group")
-                yield Static("  Reading SMART attributes...", id="test-status", classes="config-group")
-                yield ProgressBar(total=100, show_eta=True, id="test-progress", classes="config-group")
-                yield Static("", id="smart-summary", classes="config-group")
-            yield Static("  \u2191/\u2192 Continue   Esc Back", id="footer")
-
-    def on_mount(self) -> None:
-        threading.Thread(target=self._run_workflow, daemon=True).start()
-
-    def _show_summary(self, sd) -> None:
-        if sd is None:
-            self._set_status("  SMART data not available")
-            return
-        lines = [
-            f"  Health: {sd.overall_health}",
-            f"  Temperature: {sd.temperature or 'N/A'} \u00b0C",
-            f"  Power-on Hours: {sd.power_on_hours or 'N/A'}",
-            f"  Reallocated Sectors: {sd.reallocated_sectors}",
-            f"  Pending Sectors: {sd.pending_sectors}",
-            f"  Uncorrectable Sectors: {sd.uncorrectable_sectors}",
-        ]
-        self._set_status("\n".join(lines))
-
-    def on_key(self, event) -> None:
-        if event.key == "escape":
-            self.app.pop_screen()
-        elif event.key in ("enter", "down", "up"):
-            self.app.push_screen(DriveInfoScreen(self.disk, self._smart_data, resume=self.resume))
-
-    def _set_progress(self, pct: int) -> None:
-        try:
-            self.query_one("#test-progress", ProgressBar).progress = pct
-        except Exception:
-            pass
-
-    def _set_status(self, msg: str) -> None:
-        try:
-            self.query_one("#test-status").update(msg)
-        except Exception:
-            pass
-
-    def _run_workflow(self) -> None:
-        try:
-            from obg.utils.runner import run
-            from obg.core.health import poll_smart_test
-
-            if self.disk.is_mock:
-                self.app.call_from_thread(self._set_status, "  Mock device \u2014 skipping SMART test")
-                return
-
-            # initial SMART read
-            self.app.call_from_thread(self._set_status, "  Reading SMART data...")
-            self.app.call_from_thread(self._set_progress, 0)
-            try:
-                sd = read_smart(self.disk.device, timeout=15)
-                self._smart_data = sd
-                self.app.call_from_thread(self._show_summary, sd)
-            except Exception as e:
-                self.app.call_from_thread(self._set_status, f"  Initial read: {e}")
-
-            # abort any running test, then run short test
-            self.app.call_from_thread(self._set_progress, 0)
-            self.app.call_from_thread(self._set_status, "  Running SMART short self-test (2 min expected)...")
-            run(["smartctl", "-X", self.disk.device], timeout=10)
-            result = run(["smartctl", "-t", "short", self.disk.device], timeout=30)
-            if result.returncode not in (0, 2):
-                self.app.call_from_thread(self._set_status, f"  SMART test not supported: {result.stdout[:80]}")
-            else:
-                ok = poll_smart_test(
-                    self.disk.device, 300,
-                    on_output=lambda line: self.app.call_from_thread(self._set_status, "  " + line.replace("\n", " ")[:50]),
-                    on_progress=lambda pct: self.app.call_from_thread(self._set_progress, pct),
-                )
-                if not ok:
-                    self.app.call_from_thread(self._set_status, "  SMART test timed out (5 min) \u2014 continuing with current data")
-                else:
-                    sd = read_smart(self.disk.device)
-                    self._smart_data = sd
-                    self.app.call_from_thread(self._show_summary, sd)
-
-            # always advance to DriveInfoScreen
-            self.app.call_from_thread(self._push_drive_info)
-        except Exception as e:
-            self.app.call_from_thread(self._set_status, f"  Error: {e}")
-            self.app.call_from_thread(self._push_drive_info)
-
-    def _push_drive_info(self) -> None:
-        self.app.push_screen(DriveInfoScreen(self.disk, self._smart_data, resume=self.resume))
 
 
 class DriveInfoScreen(Screen):
@@ -556,9 +453,12 @@ class DriveInfoScreen(Screen):
                         yield Static(f"  Serial: {self.disk.serial}")
                         yield Static(f"  Firmware: {self.disk.firmware}")
                         yield Static(f"  Capacity: {self.disk.capacity_human}")
+                        yield Static(f"  WWN: {self.disk.wwn or 'N/A'}")
+                        yield Static(f"  Device: {self.disk.device}")
                     with VerticalScroll(classes="panel-box"):
                         yield Static("  Configuration", classes="group-title")
-                        yield Static(f"  Interface: {self.disk.transport}")
+                        yield Static(f"  Interface: {self.disk.interface}")
+                        yield Static(f"  Transport: {self.disk.transport}")
                         yield Static(f"  SMART: {'Supported' if self.disk.smart_supported else 'Not available'}")
                         yield Static(f"  Current FS: {self.disk.current_fs or 'None'}")
                         yield Static(f"  Partition: {self.disk.partition_table or 'None'}")
@@ -570,7 +470,6 @@ class DriveInfoScreen(Screen):
                         yield Static("  Geometry", classes="group-title")
                         yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
                         yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
-                        yield Static(f"  RPM: N/A")
             yield Horizontal(
                 Button(" Continue ", id="continue-btn"),
                 Button(" Back ", id="back-btn"),
@@ -615,11 +514,13 @@ class DriveInfoScreen(Screen):
             if sd:
                 panel.update(
                     f"  Health: {sd.overall_health}\n"
-                    f"  Temp: {sd.temperature or 'N/A'}C\n"
+                    f"  Temp: {sd.temperature or 'N/A'} C\n"
                     f"  Power-on: {sd.power_on_hours or 'N/A'} h\n"
+                    f"  Power Cycles: {sd.power_cycle_count or 'N/A'}\n"
                     f"  Reallocated: {sd.reallocated_sectors}\n"
                     f"  Pending: {sd.pending_sectors}\n"
-                    f"  Uncorrectable: {sd.uncorrectable_sectors}"
+                    f"  Uncorrectable: {sd.uncorrectable_sectors}\n"
+                    f"  CRC Errors: {sd.crc_errors}"
                 )
             else:
                 panel.update("  SMART not available")
@@ -788,11 +689,11 @@ class FinalConfirmationScreen(Screen):
 class ExecutionScreen(Screen):
     STEP_DESCRIPTIONS = {
         "Drive Identification": "Verifying device identity and accessibility...\nChecking that the expected drive is present and reachable.",
-        "Initial Health Check": "Running SMART short self-test...\nThe drive firmware performs an internal diagnostic scan.\nEstimated duration: up to 2 minutes.",
-        "Surface Validation": "Scanning the entire disk surface for bad sectors.\nThis is the longest step and may take hours depending on disk size and speed.",
-        "Final Health Check": "Re-reading SMART attributes after surface validation...\nChecking for any changes in drive health metrics.",
-        "Compare Results": "Comparing SMART snapshots taken before and after validation...\nDetecting changes caused by the validation process.",
-        "Prepare Disk": "Creating a new GPT partition table...",
+        "Initial SMART Self-Test": "Running SMART short self-test (Snapshot A)...\nThe drive firmware performs an internal diagnostic scan.\nEstimated duration: up to 2 minutes.",
+        "Surface Scan (Badblocks)": "Scanning the entire disk surface for bad sectors.\nThis is the longest step and may take hours depending on disk size and speed.",
+        "Final SMART Self-Test": "Running final SMART short self-test (Snapshot B)...\nChecking for changes after surface validation.",
+        "SMART Comparison": "Comparing SMART snapshots taken before and after validation...\nDetecting changes caused by the validation process.",
+        "Create GPT": "Creating a new GPT partition table...",
         "Create Partition": "Creating a primary partition spanning the full disk capacity...",
         "Format Filesystem": "Formatting the partition with the selected filesystem...",
         "Generate Report": "Compiling validation data and generating the final report...",
@@ -927,12 +828,12 @@ class ExecutionScreen(Screen):
             self._bb_pattern = "—"
             self._update_progress()
             return
-        if line.startswith("Compare Results:"):
-            self._bb_operation = "Compare Results"
+        if line.startswith("SMART comparison completed"):
+            self._bb_operation = "SMART Comparison"
             self._bb_progress = 100
             self._update_progress()
             try:
-                self.query_one("#progress-info").update(line.replace("Compare Results:\n", "  ").replace("\n", "\n  "))
+                self.query_one("#progress-info").update(line.replace("SMART comparison completed:\n", "  ").replace("\n", "\n  "))
             except Exception:
                 pass
             return

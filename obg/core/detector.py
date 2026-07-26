@@ -93,7 +93,7 @@ def _is_unsupported(dev: dict) -> bool:
 def list_disks() -> list[DiskInfo]:
     cmd = [
         "lsblk", "-J", "-b", "-o",
-        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,REV,TRAN,ROTA,PHY-SEC,LOG-SEC,PTTYPE",
+        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,REV,TRAN,ROTA,PHY-SEC,LOG-SEC,PTTYPE,WWN",
     ]
     result = run(cmd)
     if result.returncode != 0:
@@ -142,6 +142,7 @@ def list_disks() -> list[DiskInfo]:
             is_boot_disk=boot_disk,
             temperature=None,
             power_on_hours=None,
+            wwn=dev.get("wwn") or None,
             is_supported=not is_unsupported,
         )
         disks.append(disk_info)

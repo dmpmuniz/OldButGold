@@ -23,6 +23,7 @@ class DiskInfo:
     is_boot_disk: bool
     temperature: int | None
     power_on_hours: int | None
+    wwn: str | None = None
     is_supported: bool = True
     is_mock: bool = False
 
@@ -38,6 +39,7 @@ class SmartData:
     power_on_hours: int | None
     raw_output: str
     collected_at: datetime
+    power_cycle_count: int | None = None
 
 
 @dataclass

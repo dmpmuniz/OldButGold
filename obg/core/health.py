@@ -79,6 +79,7 @@ def read_smart(device: str, timeout: int | None = 30) -> SmartData | None:
         crc_errors=attrs.get(199, 0),
         temperature=temperature,
         power_on_hours=power_on_hours,
+        power_cycle_count=attrs.get(12),
         raw_output=output,
         collected_at=datetime.now(),
     )

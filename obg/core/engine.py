@@ -9,23 +9,23 @@ from obg.models.classification import Classification, ClassificationResult
 from obg import __version__
 from obg.models.report import ReportData
 from obg.core.detector import verify_identity
-from obg.core.health import read_smart
+from obg.core.health import read_smart, run_short_test
 from obg.core.scanner import run_badblocks
 from obg.core.partitioner import create_gpt, create_partition
 from obg.core.formatter import format_filesystem
 from obg.core.classifier import classify
 from obg.core.reporter import generate_report
 from obg.core.lock import acquire_lock, release_lock
-from obg.core.session import create_session, find_session, update_checkpoint, update_stage, complete_session
+from obg.core.session import create_session, find_session, update_checkpoint, update_stage, complete_session, save_smart_snapshot_a, load_smart_snapshot_a
 
 
 STEPS = [
     "Drive Identification",
-    "Initial Health Check",
-    "Surface Validation",
-    "Final Health Check",
-    "Compare Results",
-    "Prepare Disk",
+    "Initial SMART Self-Test",
+    "Surface Scan (Badblocks)",
+    "Final SMART Self-Test",
+    "SMART Comparison",
+    "Create GPT",
     "Create Partition",
     "Format Filesystem",
     "Generate Report",
@@ -95,14 +95,18 @@ def run_pipeline(
                     return False
                 return True
 
-        smart_before = None
-        smart_after = None
+        snapshot_a = None
+        snapshot_b = None
         delta = None
         bb_count = 0
         report_path = None
         partition = None
         snapshot = None
         classification = None
+
+        existing_session = None
+        if resume:
+            existing_session = find_session(disk_info)
 
         # Step 1: Drive Identification
         def _identify():
@@ -112,40 +116,45 @@ def run_pipeline(
             if not verify_identity(device, disk_info.model, disk_info.serial):
                 raise RuntimeError("Device identity mismatch")
         if not _run("Drive Identification", _identify):
-            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)
 
-        # Step 2: Initial Health Check (baseline SMART — short test already done in SmartTestScreen)
-        def _initial_health():
-            nonlocal smart_before
+        # Step 2: Initial SMART Self-Test — run short test, read attributes, save as Snapshot A
+        def _initial_smart():
+            nonlocal snapshot_a
             if disk_info.is_mock:
                 on_output("SMART not available for mock device")
                 return
-            on_output("Collecting SMART baseline...")
-            try:
-                smart_before = read_smart(device)
-                if smart_before:
-                    on_output("SMART baseline collected")
-                else:
-                    on_output("No SMART data available for this device")
-            except Exception as e:
-                on_output(f"SMART baseline skipped: {e}")
-        _run("Initial Health Check", _initial_health, fatal=False)
+            if resume and existing_session and existing_session.get("smart_snapshot_a"):
+                recovered = load_smart_snapshot_a(disk_info)
+                if recovered:
+                    snapshot_a = recovered
+                    on_output(f"RESUME: recovered SMART Snapshot A from session")
+                    return
+            on_output("Running SMART short self-test...")
+            ok = run_short_test(device, on_output=on_output)
+            if not ok:
+                on_output("SMART short self-test did not complete — reading current attributes")
+            on_output("Reading SMART attributes...")
+            sd = read_smart(device)
+            if sd:
+                snapshot_a = sd
+                save_smart_snapshot_a(disk_info, sd)
+                on_output(f"SMART Snapshot A saved — Health: {sd.overall_health}, Temp: {sd.temperature or 'N/A'}C")
+        if not _run("Initial SMART Self-Test", _initial_smart):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)
 
-        # Step 3: Surface Validation
+        # Step 3: Surface Scan (Badblocks)
         def _surface():
             nonlocal bb_count
             resume_offset = 0
             skip = False
-            if resume:
-                existing = find_session(disk_info)
-                if existing:
-                    resume_offset = existing.get("badblocks_offset", 0)
-                    stage = existing.get("current_stage", "")
-                    if stage and stage != "Badblocks Validation":
-                        # Badblocks already completed in a prior run — don't re-run it.
-                        skip = True
+            if resume and existing_session:
+                resume_offset = existing_session.get("badblocks_offset", 0)
+                stage = existing_session.get("current_stage", "")
+                if stage not in ("", "Badblocks Validation") and resume_offset > 0:
+                    skip = True
             if skip:
-                on_output("RESUME: Surface Validation already completed in a prior session — skipping this step")
+                on_output("RESUME: Surface Scan already completed — skipping")
                 return
             if resume_offset == 0:
                 create_session(disk_info)
@@ -156,42 +165,48 @@ def run_pipeline(
                 device, on_output, on_checkpoint=_on_checkpoint,
                 test_mode=test_mode, profile=profile, resume_offset=resume_offset,
             )
-            update_stage(disk_info, "Post Validation")
-        if not _run("Surface Validation", _surface):
-            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
+        if not _run("Surface Scan (Badblocks)", _surface):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)
 
-        # Step 4: Final Health Check
-        def _final_health():
-            nonlocal smart_after
+        # Step 4: Final SMART Self-Test — run short test, read attributes, save as Snapshot B
+        def _final_smart():
+            nonlocal snapshot_b
             if disk_info.is_mock:
                 on_output("SMART not available for mock device")
                 return
-            try:
-                smart_after = read_smart(device)
-            except Exception as e:
-                on_output(f"Final SMART skipped: {e}")
-        _run("Final Health Check", _final_health, fatal=False)
+            on_output("Running final SMART short self-test...")
+            ok = run_short_test(device, on_output=on_output)
+            if not ok:
+                on_output("Final SMART short self-test did not complete — reading current attributes")
+            on_output("Reading SMART attributes...")
+            sd = read_smart(device)
+            if sd:
+                snapshot_b = sd
+                on_output(f"SMART Snapshot B saved — Health: {sd.overall_health}, Temp: {sd.temperature or 'N/A'}C")
+        _run("Final SMART Self-Test", _final_smart, fatal=False)
 
-        # Step 5: Compare Results
+        # Step 5: SMART Comparison
         def _compare():
             nonlocal delta
-            if smart_before and smart_after:
+            if snapshot_a and snapshot_b:
                 delta = SmartDelta(
-                    reallocated=smart_after.reallocated_sectors - smart_before.reallocated_sectors,
-                    pending=smart_after.pending_sectors - smart_before.pending_sectors,
-                    uncorrectable=smart_after.uncorrectable_sectors - smart_before.uncorrectable_sectors,
-                    crc_errors=smart_after.crc_errors - smart_before.crc_errors,
-                    temperature=(smart_after.temperature - smart_before.temperature)
-                        if smart_after.temperature is not None and smart_before.temperature is not None else None,
+                    reallocated=snapshot_b.reallocated_sectors - snapshot_a.reallocated_sectors,
+                    pending=snapshot_b.pending_sectors - snapshot_a.pending_sectors,
+                    uncorrectable=snapshot_b.uncorrectable_sectors - snapshot_a.uncorrectable_sectors,
+                    crc_errors=snapshot_b.crc_errors - snapshot_a.crc_errors,
+                    temperature=(snapshot_b.temperature - snapshot_a.temperature)
+                        if snapshot_b.temperature is not None and snapshot_a.temperature is not None else None,
                 )
-                on_output("Compare Results:\n" + _format_delta(delta))
-        _run("Compare Results", _compare, fatal=False)
+                on_output("SMART comparison completed:\n" + _format_delta(delta))
+            else:
+                on_output("SMART comparison skipped — snapshots unavailable")
+        _run("SMART Comparison", _compare, fatal=False)
 
-        # Step 6: Prepare Disk
-        if not _run("Prepare Disk", lambda: create_gpt(device)):
-            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
+        # Step 6: Create GPT
+        if not _run("Create GPT", lambda: create_gpt(device)):
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)
 
-        # Step 7: Create Partition (skip for mock files — partition lives inside the image)
+        # Step 7: Create Partition
         def _part():
             nonlocal partition
             if disk_info.is_mock:
@@ -199,21 +214,21 @@ def run_pipeline(
             else:
                 partition = create_partition(device)
         if not _run("Create Partition", _part):
-            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)
 
         # Step 8: Format Filesystem
         extra_args = ["-F"] if disk_info.is_mock else []
         fs_ok = _run("Format Filesystem", lambda: format_filesystem(partition, filesystem, label, on_output, extra_args=extra_args))
         fs_created = fs_ok
         if not fs_ok:
-            return _build_result(False, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count)
+            return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)
 
         # Step 9: Generate Report
         def _report():
             nonlocal snapshot, classification, report_path
             snapshot = DiskSnapshot(
-                disk_info=disk_info, smart_before=smart_before,
-                smart_after=smart_after, smart_delta=delta,
+                disk_info=disk_info, smart_before=snapshot_a,
+                smart_after=snapshot_b, smart_delta=delta,
                 badblocks_count=bb_count,
                 filesystem_created=fs_created, uninterrupted=True,
             )
@@ -239,7 +254,7 @@ def run_pipeline(
                 pass
         _finish_step(sr, StepStatus.OK)
 
-        return _build_result(True, False, step_results, start_time, report_path, disk_info, smart_before, smart_after, delta, bb_count, snapshot=snapshot, classification=classification)
+        return _build_result(True, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count, snapshot=snapshot, classification=classification)
     finally:
         release_lock(device)
 
