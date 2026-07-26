@@ -82,7 +82,7 @@ def run(
 ) -> RunResult:
     resolved_str = _resolve_tool(command[0])
     resolved = resolved_str.split() + command[1:]
-    cmd_str = " ".join(resolved) if len(" ".join(resolved)) < 200 else " ".join(resolved[:3]) + " ..."
+    cmd_str = " ".join(resolved) if len(" ".join(resolved)) < 200 else command[0] + " " + " ".join(command[1:])
     logger.debug("CMD", f"run: {cmd_str}")
     env = _build_env(use_bundled_libs=getattr(sys, 'frozen', False))
     start = time.monotonic()
