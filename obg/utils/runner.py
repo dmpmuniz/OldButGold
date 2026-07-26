@@ -32,20 +32,18 @@ def _resolve_tool(name: str) -> str:
     if exe_dir:
         tp = exe_dir / "tools" / name
         if tp.exists() and os.access(tp, os.X_OK):
-            # If we also bundled a dynamic loader + libs, run the tool through
-            # the loader so the bundled libs are actually used (self-contained).
             loader = _find_loader(exe_dir)
             if loader:
                 return f"{loader} --library-path {exe_dir / 'lib'} {tp}"
             return str(tp)
-        if getattr(sys, 'frozen', False):
-            raise FileNotFoundError(
-                f"Required tool '{name}' not found in application bundle. "
-                f"OldButGold must be executed from a complete distribution."
-            )
     which = shutil.which(name)
     if which:
         return which
+    if getattr(sys, 'frozen', False):
+        raise FileNotFoundError(
+            f"Required tool '{name}' not found in application bundle "
+            f"or system PATH. OldButGold must be executed from a complete distribution."
+        )
     raise FileNotFoundError(f"Required tool not found: {name}")
 
 
