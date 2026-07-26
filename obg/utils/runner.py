@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re as _re
 import shutil
 import subprocess
 import sys
@@ -100,6 +101,7 @@ def run(
         lines = []
         fd = proc.stdout.fileno()
         _last_progress = b""
+        _last_bs_pct = None
         while True:
             chunk = os.read(fd, 4096)
             if not chunk:
@@ -111,6 +113,22 @@ def run(
                     buf = buf[:pos - 1] + buf[pos + 1:]
                 else:
                     buf = buf[1:]
+                if b"% done" in buf:
+                    pm = _re.search(rb'([\d.]+)% done', buf)
+                    if pm and pm.group(1) != _last_bs_pct:
+                        _last_bs_pct = pm.group(1)
+                        bs_after = buf.find(b'\x08', pm.end())
+                        segment = buf[:bs_after] if bs_after >= 0 else buf
+                        clean = segment
+                        while b"\x08" in clean:
+                            p2 = clean.find(b"\x08")
+                            if p2 > 0:
+                                clean = clean[:p2-1] + clean[p2+1:]
+                            else:
+                                clean = clean[1:]
+                        clean = clean.strip()
+                        if clean and b"% done" in clean:
+                            on_output(clean.decode("utf-8", errors="replace"))
             while b"\n" in buf or b"\r" in buf:
                 idx = -1
                 nidx = buf.find(b"\n")
