@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.0
+
+- TUI redesign: all 9 screens with consistent card/metric layout, SCREEN_SIZE fixed at 120x40
+- ExecutionScreen: large ProgressBar + 3x3 metric cards + disk info panel + output log
+- MainMenuScreen: DVD-blade box-drawing title, disclaimer in card
+- CompleteScreen: card-organized sections
+- ValidationConfigScreen: card-based selection instead of text markers
+- DriveInfoScreen, SessionDecisionScreen, MountWarningScreen, FinalConfirmationScreen: card wrappers
+- Relabeled "Steps" → "Validation Stages" on execution screen
+- CSS: metric-card, startup-btn.selected, warning-box
+
 ## v0.8.1
 
 - Fix badblocks validation profiles to match official documentation
