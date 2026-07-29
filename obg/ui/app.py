@@ -56,45 +56,72 @@ class ObgApp(App):
 
     CSS = """
     Screen { background: #000000; }
-    #app-frame { width: 100%; height: 100%; border: solid #444444; background: #0a0a0a; layout: vertical; }
-    #header { dock: top; height: 1; background: #111111; color: #cccccc; padding: 0 1; }
+    #app-frame { width: 100%; height: 100%; border: solid #00ff00; background: #000000; layout: vertical; }
+    #header { dock: top; height: 1; background: #001100; color: #00ff00; padding: 0 1; text-style: bold; }
     #body { height: 1fr; overflow-y: auto; padding: 0 1; }
-    #footer { dock: bottom; height: 1; background: #111111; color: #888888; padding: 0 1; }
-    .card { border: solid #333333; margin: 0 1 1 1; padding: 0 1; }
-    .card-selected { border: solid #00ff00; margin: 0 1 1 1; padding: 0 1; background: #0a1a0a; }
-    .card:hover { background: #1a1a1a; }
-    .card-disabled { border: solid #333333; margin: 0 1 1 1; padding: 0 1; color: #555555; }
-    .group-title { color: #cccccc; text-style: bold; margin-top: 1; }
+    #footer { dock: bottom; height: 1; background: #001100; color: #888888; padding: 0 1; }
+
+    /* Premium panels - double-line borders */
+    .panel { border: double #00ff00; margin: 0 1 1 1; padding: 0 1; background: #0a0a0a; }
+    .panel-warn { border: double #ffff00; margin: 0 1 1 1; padding: 0 1; background: #1a1a0a; }
+    .panel-error { border: double #ff0000; margin: 0 1 1 1; padding: 0 1; background: #1a0a0a; }
+    .panel-selected { border: double #00ff00; margin: 0 1 1 1; padding: 0 1; background: #0a1a0a; }
+    .panel-disabled { border: double #444444; margin: 0 1 1 1; padding: 0 1; background: #0a0a0a; color: #555555; }
+
+    /* Typography */
+    .section-title { color: #00ff00; text-style: bold; margin-top: 1; }
+    .group-title { color: #00ff00; text-style: bold; margin-top: 1; }
     .config-group { margin: 0 0 0 2; }
     .config-label { color: #888888; margin-top: 1; }
+    .muted { color: #888888; }
     .warning { color: #ffff00; text-style: bold; }
     .ok { color: #00ff00; }
+    .failed { color: #ff0000; text-style: bold; }
+    .empty-msg { content-align: center middle; height: 100%; color: #666666; }
+
+    /* Step status */
     .step-ok { color: #00ff00; }
     .step-running { color: #ffff00; }
     .step-failed { color: #ff0000; }
     .step-pending { color: #666666; }
     .step-skipped { color: #555555; }
+
+    /* Classification badges */
     .gold { color: #00ff00; text-style: bold; }
     .silver { color: #aaaaaa; text-style: bold; }
     .bronze { color: #cd7f32; text-style: bold; }
-    .failed { color: #ff0000; text-style: bold; }
-    .empty-msg { content-align: center middle; height: 100%; color: #666666; }
-    .btn-row { height: 3; align: center middle; }
-    .btn-row Button { width: 1fr; margin: 0 1; }
-    .btn-row Button:hover { background: #1a3a1a; }
-    .btn-row Button:focus { border: solid #00ff00; }
-    .startup-btn.selected { border: solid #00ff00; background: #0a1a0a; }
-    .steps-col { width: 30%; min-width: 25; border-right: solid #333333; padding: 0 1; }
+
+    /* Buttons */
+    .btn-bar { height: 3; align: center middle; }
+    .btn-bar Button { width: 1fr; margin: 0 1; border: double #00ff00; background: #0a1a0a; color: #00ff00; }
+    .btn-bar Button:hover { background: #1a3a1a; }
+    .btn-bar Button:focus { border: double #00ff00; }
+    .btn-selected { border: double #00ff00; background: #0a1a0a; }
+
+    /* Execution screen layout */
+    .steps-col { width: 30%; min-width: 25; border-right: double #00ff00; padding: 0 1; }
     .output-col { width: 70%; min-width: 40; }
-    .panel-box { border: solid #333333; margin: 0 1; padding: 0 1; }
-    .warning-box { border: solid #ff0000; margin: 1 2; padding: 1; color: #ffff00; text-style: bold; content-align: center middle; }
-    ProgressBar { margin: 0 1; height: 2; }
+
+    /* Metric cards - 3-column grid */
     .metric-card { border: solid #333333; padding: 0 1; margin: 0 0 1 0; width: 1fr; min-height: 3; }
     .metric-card-title { color: #888888; text-style: bold; }
     .metric-card-value { color: #00ff00; }
+
+    /* Disk info row */
     .disk-info-row { height: 3; margin: 0 1 1 1; }
-    .disk-info-row > Static { width: 1fr; border: solid #333333; padding: 0 1; content-align: center middle; }
+    .disk-info-row > Static { width: 1fr; border: double #00ff00; padding: 0 1; content-align: center middle; }
+
+    /* Output log */
     #output-log { margin: 0 1; min-height: 6; color: #aaaaaa; }
+
+    /* Progress bar */
+    ProgressBar { margin: 0 1; height: 2; }
+
+    /* Warning box */
+    .warning-box { border: double #ff0000; margin: 1 2; padding: 1; color: #ffff00; text-style: bold; content-align: center middle; }
+
+    /* Section separator */
+    .separator { border-top: double #00ff00; margin: 1 0; }
     """
 
     def on_mount(self) -> None:
@@ -137,14 +164,14 @@ class StartupScreen(Screen):
             yield Static(f"OldButGold v{__version__}  /  Startup", id="header")
             with VerticalScroll(id="body"):
                 yield Static("")
-                yield Static("  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510", classes="group-title")
-                yield Static("  \u2502       O L D   B U T   G O L D       \u2502", classes="group-title")
-                yield Static("  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518", classes="group-title")
+                yield Static("  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510", classes="section-title")
+                yield Static("  \u2502       O L D   B U T   G O L D       \u2502", classes="section-title")
+                yield Static("  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518", classes="section-title")
                 yield Static("")
                 yield Static("     HDD Validation & Refurbishment Toolkit", classes="config-group")
                 yield Static("")
-                with Container(classes="card"):
-                    yield Static("  Legal Disclaimer", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static("  Legal Disclaimer", classes="section-title")
                     yield Static(
                         "  OldButGold performs hardware validation using industry-standard diagnostic utilities.\n"
                         "  Validation results reflect only the observed condition of the storage device during execution.\n"
@@ -156,9 +183,9 @@ class StartupScreen(Screen):
                 yield Static("")
                 yield Static("  Initializing...", id="init-status", classes="config-group")
             yield Horizontal(
-                Button(" Continue ", id="continue-btn", classes="startup-btn selected", disabled=True),
+                Button(" Continue ", id="continue-btn", classes="startup-btn btn-selected", disabled=True),
                 Button(" Exit ", id="exit-btn", classes="startup-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Initializing, please wait...", id="footer")
 
@@ -167,12 +194,12 @@ class StartupScreen(Screen):
 
     def _update_buttons(self) -> None:
         try:
-            self.query_one("#continue-btn").remove_class("selected")
-            self.query_one("#exit-btn").remove_class("selected")
+            self.query_one("#continue-btn").remove_class("btn-selected")
+            self.query_one("#exit-btn").remove_class("btn-selected")
             if self._selected == 0:
-                self.query_one("#continue-btn").add_class("selected")
+                self.query_one("#continue-btn").add_class("btn-selected")
             else:
-                self.query_one("#exit-btn").add_class("selected")
+                self.query_one("#exit-btn").add_class("btn-selected")
         except Exception:
             pass
 
@@ -225,7 +252,7 @@ class DriveSelectionScreen(Screen):
                 Button(" Continue ", id="continue-btn"),
                 Button(" Refresh ", id="refresh-btn"),
                 Button(" Quit ", id="quit-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", id="footer")
 
@@ -267,10 +294,10 @@ class DriveSelectionScreen(Screen):
                     total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
                     pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
                     lines.append(f"  ! Interrupted Validation  -  {pct}%")
-                widget = Static("\n".join(lines), classes="card-selected" if selected else "card")
+                widget = Static("\n".join(lines), classes="panel-selected" if selected else "card")
             else:
                 widget = Static(f"  {disk.model}\n  {disk.device}  {disk.capacity_human}  [Unsupported]",
-                                classes="card-disabled")
+                                classes="panel-disabled")
             widget.idx = i
             c.mount(widget)
 
@@ -333,8 +360,8 @@ class SessionDecisionScreen(Screen):
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  /  Session Recovery", id="header")
             with VerticalScroll(id="body"):
-                with Container(classes="card"):
-                    yield Static("  Interrupted Validation Session", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static("  Interrupted Validation Session", classes="section-title")
                     yield Static(f"  Model:         {self.disk.model}")
                     yield Static(f"  Serial:        {self.disk.serial}")
                     yield Static(f"  Capacity:      {self.disk.capacity_human}")
@@ -349,7 +376,7 @@ class SessionDecisionScreen(Screen):
                 Button(" Restart ", id="restart-btn"),
                 Button(" View Details ", id="details-btn"),
                 Button(" Back ", id="back-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Enter Select   Esc Back", id="footer")
 
@@ -382,8 +409,8 @@ class MountWarningScreen(Screen):
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  /  Drive Mounted", id="header")
             with VerticalScroll(id="body"):
-                with Container(classes="card"):
-                    yield Static(f"  {self.disk.model}", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static(f"  {self.disk.model}", classes="section-title")
                     yield Static(f"  {self.disk.device}  {self.disk.capacity_human}")
                     yield Static("")
                     yield Static("  This drive has mounted partitions:", classes="warning")
@@ -396,7 +423,7 @@ class MountWarningScreen(Screen):
             yield Horizontal(
                 Button(" Unmount & Continue ", id="unmount-btn"),
                 Button(" Back ", id="back-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Esc Back   Enter Unmount", id="footer")
 
@@ -452,33 +479,33 @@ class DriveInfoScreen(Screen):
             yield Static(f"OldButGold v{__version__}  /  Drive Info  /  {self.disk.model}", id="header")
             with VerticalScroll(id="body"):
                 with Horizontal():
-                    with Container(classes="card"):
-                        yield Static("  Device Information", classes="group-title")
+                    with Container(classes="panel"):
+                        yield Static("  Device Information", classes="section-title")
                         yield Static(f"  Model:  {self.disk.model}")
                         yield Static(f"  Serial: {self.disk.serial}")
                         yield Static(f"  Firmware: {self.disk.firmware}")
                         yield Static(f"  Capacity: {self.disk.capacity_human}")
                         yield Static(f"  WWN: {self.disk.wwn or 'N/A'}")
                         yield Static(f"  Device: {self.disk.device}")
-                    with Container(classes="card"):
-                        yield Static("  Configuration", classes="group-title")
+                    with Container(classes="panel"):
+                        yield Static("  Configuration", classes="section-title")
                         yield Static(f"  Interface: {self.disk.interface}")
                         yield Static(f"  Transport: {self.disk.transport}")
                         yield Static(f"  SMART: {'Supported' if self.disk.smart_supported else 'Not available'}")
                         yield Static(f"  Current FS: {self.disk.current_fs or 'None'}")
                         yield Static(f"  Partition: {self.disk.partition_table or 'None'}")
                 with Horizontal():
-                    with Container(classes="card"):
-                        yield Static("  SMART Information", classes="group-title")
+                    with Container(classes="panel"):
+                        yield Static("  SMART Information", classes="section-title")
                         yield Static("  Reading SMART data...", id="smart-panel")
-                    with Container(classes="card"):
-                        yield Static("  Geometry", classes="group-title")
+                    with Container(classes="panel"):
+                        yield Static("  Geometry", classes="section-title")
                         yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
                         yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
             yield Horizontal(
                 Button(" Continue ", id="continue-btn"),
                 Button(" Back ", id="back-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Esc Back   Enter Continue", id="footer")
 
@@ -554,24 +581,24 @@ class ValidationConfigScreen(Screen):
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  /  Configuration", id="header")
             with VerticalScroll(id="body"):
-                with Container(classes="card"):
-                    yield Static("  Validation Profile", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static("  Validation Profile", classes="section-title")
                     for p in self.PROFILES:
-                        cls = "card-selected" if p.lower() == self.PROFILES[self._profile_idx].lower() else "card"
+                        cls = "panel-selected" if p.lower() == self.PROFILES[self._profile_idx].lower() else "panel"
                         yield Static(f"  {p}", id=f"prof-{p.lower()}", classes=cls)
                 yield Static("", id="profile-desc")
-                with Container(classes="card"):
-                    yield Static("  Filesystem", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static("  Filesystem", classes="section-title")
                     for f in self.FS_OPTIONS:
-                        cls = "card-selected" if f == self.FS_OPTIONS[self._fs_idx] else "card"
+                        cls = "panel-selected" if f == self.FS_OPTIONS[self._fs_idx] else "panel"
                         yield Static(f"  {f}", id=f"fs-{f}", classes=cls)
-                with Container(classes="card"):
-                    yield Static("  Volume Label (optional)", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static("  Volume Label (optional)", classes="section-title")
                     yield Input(value=self.config.get("label", ""), id="label-input")
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
                 Button(" Continue ", id="continue-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Esc Back   Enter Continue", id="footer")
 
@@ -622,8 +649,8 @@ class ValidationConfigScreen(Screen):
             try:
                 w = self.query_one(f"#prof-{p.lower()}")
                 sel = p.lower() == self.PROFILES[self._profile_idx].lower()
-                w.set_class(sel, "card-selected")
-                w.set_class(not sel, "card")
+                w.set_class(sel, "panel-selected")
+                w.set_class(not sel, "panel")
                 w.update(f"  {p}")
             except Exception:
                 pass
@@ -631,8 +658,8 @@ class ValidationConfigScreen(Screen):
             try:
                 w = self.query_one(f"#fs-{f}")
                 sel = f == self.FS_OPTIONS[self._fs_idx]
-                w.set_class(sel, "card-selected")
-                w.set_class(not sel, "card")
+                w.set_class(sel, "panel-selected")
+                w.set_class(not sel, "panel")
                 w.update(f"  {f}")
             except Exception:
                 pass
@@ -675,8 +702,8 @@ class FinalConfirmationScreen(Screen):
         with Container(id="app-frame"):
             yield Static(f"OldButGold v{__version__}  /  Confirm", id="header")
             with VerticalScroll(id="body"):
-                with Container(classes="card"):
-                    yield Static("  Validation Summary", classes="group-title")
+                with Container(classes="panel"):
+                    yield Static("  Validation Summary", classes="section-title")
                     yield Static(f"  Drive:  {self.disk.model}")
                     yield Static(f"  Serial: {self.disk.serial}")
                     yield Static(f"  Capacity: {self.disk.capacity_human}")
@@ -691,7 +718,7 @@ class FinalConfirmationScreen(Screen):
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
                 Button(" Start Validation ", id="start-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Esc Back   Enter Start", id="footer")
 
@@ -746,7 +773,7 @@ class ExecutionScreen(Screen):
             yield Static(f"OldButGold v{__version__}  /  Validation{mode}", id="header")
             with Horizontal(id="body"):
                 with VerticalScroll(classes="steps-col"):
-                    yield Static("  Validation Stages", classes="group-title")
+                    yield Static("  Validation Stages", classes="section-title")
                     for s in PIPELINE_STAGES:
                         w = Static(f"  [ ]  {s}", classes="step-pending")
                         self._step_widgets[s] = w
@@ -769,7 +796,7 @@ class ExecutionScreen(Screen):
                         yield Static("", id="disk-model")
                         yield Static("", id="disk-serial")
                         yield Static("", id="disk-smart")
-                    yield Static("", id="output-log", classes="panel-box")
+                    yield Static("", id="output-log", classes="panel")
             yield Static("  [C] Cancel  \u2014  Elapsed: 00:00:00", id="footer")
 
     def on_mount(self) -> None:
@@ -857,7 +884,7 @@ class ExecutionScreen(Screen):
             self._bb_progress = 100
             self._update_progress()
             try:
-                self.query_one("#metrics-list").update(line.replace("SMART comparison completed:\n", "").replace("\n", "\n"))
+                self.query_one("#output-log").update(line.replace("SMART comparison completed:\n", "").replace("\n", "\n"))
             except Exception:
                 pass
             return
@@ -996,19 +1023,19 @@ class CompleteScreen(Screen):
                 if self.result:
                     r = self.result
                     cls_val = r.classification.classification.value
-                    with Container(classes="card"):
+                    with Container(classes="panel"):
                         yield Static(f"  {cls_val}", classes=cls_val.lower())
-                    with Container(classes="card"):
+                    with Container(classes="panel"):
                         yield Static(f"  {self.disk.model}")
                         yield Static(f"  {self.disk.serial}  |  {self.disk.capacity_human}")
-                    with Container(classes="card"):
+                    with Container(classes="panel"):
                         yield Static(f"  Filesystem:    {self.config['filesystem']}")
                         yield Static(f"  Label:         {self.config['label'] or '(none)'}")
                         yield Static(f"  Bad Blocks:    {r.snapshot.badblocks_count}")
                     sb = r.snapshot.smart_before
                     sa = r.snapshot.smart_after
-                    with Container(classes="card"):
-                        yield Static("  SMART Comparison", classes="group-title")
+                    with Container(classes="panel"):
+                        yield Static("  SMART Comparison", classes="section-title")
                         if sb and sa:
                             for label, before, after, delta_val in [
                                 ("Reallocated Sectors", sb.reallocated_sectors, sa.reallocated_sectors, r.snapshot.smart_delta.reallocated if r.snapshot.smart_delta else None),
@@ -1031,11 +1058,11 @@ class CompleteScreen(Screen):
                             yield Static(f"  Health: {sb.overall_health}")
                         else:
                             yield Static("  SMART data not available")
-                    with Container(classes="card"):
+                    with Container(classes="panel"):
                         for reason in r.classification.reasons:
                             yield Static(f"  - {reason}")
                     if any(s.status in (StepStatus.FAILED, StepStatus.SKIPPED) and s.error for s in r.steps):
-                        with Container(classes="card"):
+                        with Container(classes="panel"):
                             for s in r.steps:
                                 if s.status in (StepStatus.FAILED, StepStatus.SKIPPED) and s.error:
                                     yield Static(f"  \u2192 {s.name}: {s.error[:200]}", classes="failed")
@@ -1044,7 +1071,7 @@ class CompleteScreen(Screen):
                     m = int((dur % 3600) // 60)
                     s = int(dur % 60)
                     ds = f"{h}h {m:02d}m {s:02d}s" if h else (f"{m}m {s:02d}s" if m else f"{s}s")
-                    with Container(classes="card"):
+                    with Container(classes="panel"):
                         yield Static(f"  Duration: {ds}")
                         if r.report_path:
                             yield Static(f"  Report: {r.report_path}")
@@ -1052,10 +1079,10 @@ class CompleteScreen(Screen):
                         else:
                             yield Static("  No report generated.")
                 else:
-                    with Container(classes="card"):
+                    with Container(classes="panel"):
                         yield Static("  Pipeline failed or was cancelled.", classes="failed")
                     if self.error:
-                        with Container(classes="card"):
+                        with Container(classes="panel"):
                             yield Static("  Root cause:", classes="warning")
                             for line in self.error.strip().splitlines()[-12:]:
                                 yield Static(f"  {line}", classes="failed")
@@ -1063,7 +1090,7 @@ class CompleteScreen(Screen):
                 Button(" Export Report ", id="export-btn"),
                 Button(" Validate Another Drive ", id="another-btn"),
                 Button(" Quit ", id="quit-btn"),
-                classes="btn-row",
+                classes="btn-bar",
             )
             yield Static("  Enter Another   Q Quit", id="footer")
 
