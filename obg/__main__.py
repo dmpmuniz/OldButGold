@@ -91,6 +91,9 @@ def main() -> None:
     logger.info("MAIN", "Running with elevated privileges")
 
     try:
+        if sys.stdout.isatty():
+            sys.stdout.write("\x1b[8;40;100t")
+            sys.stdout.flush()
         ObgApp(test_mode=test_mode, mock_path=mock_path).run()
     except Exception as e:
         logger.error("APP", f"Unhandled exception: {e}")

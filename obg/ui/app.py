@@ -1,46 +1,67 @@
 from __future__ import annotations
+
 import os
 import re
 import subprocess
-import sys
-import threading
 import time
+from typing import Callable
+
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, VerticalScroll, Horizontal
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Static, Button, Input, ProgressBar
-from textual import work
-from obg import __version__
+from textual.widgets import Button, Input, Static
 
+from obg import __version__
+from obg.config import load_config, save_config, VALID_FILESYSTEMS, VALID_PROFILES
 from obg.core.detector import list_disks, list_mock_disks
-from obg.core.engine import run_pipeline, STEPS as PIPELINE_STAGES
-from obg.core.reporter import _format_duration as _format_eta
+from obg.core.engine import STEPS as PIPELINE_STAGES
+from obg.core.engine import run_pipeline
 from obg.core.health import read_smart
-from obg.core.session import find_session, complete_session
-from obg.config import load_config, save_config, VALID_PROFILES, VALID_FILESYSTEMS
+from obg.core.session import complete_session, find_session
 from obg.models.disk import DiskInfo
-from obg.models.operation import StepStatus, OperationResult
+from obg.models.operation import OperationResult, StepStatus
+
+PALETTE = {
+    "bg": "#0d1117",
+    "panel": "#161b22",
+    "panel-soft": "#1c2430",
+    "border": "#30363d",
+    "accent": "#58a6ff",
+    "text": "#c9d1d9",
+    "muted": "#8b949e",
+    "faint": "#6e7681",
+    "ok": "#3fb950",
+    "warn": "#d29922",
+    "err": "#f85149",
+}
+
+
+def _fmt_duration(seconds: float) -> str:
+    total = int(seconds)
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
 
 
 def _get_mounted_partitions(device: str) -> list[tuple[str, str]]:
     try:
         with open("/proc/mounts") as f:
-            mounts = [l.split() for l in f.readlines() if l.strip()]
+            rows = [line.split() for line in f if line.strip()]
     except OSError:
         return []
-    result = []
-    for parts in mounts:
-        if len(parts) >= 2 and parts[0].startswith(device):
-            result.append((parts[0], parts[1]))
-    return result
+    return [(parts[0], parts[1]) for parts in rows if len(parts) >= 2 and parts[0].startswith(device)]
 
 
-def _unmount_partitions(partitions: list[tuple[str, str]]) -> list[str]:
-    import subprocess as _sp
+def _unmount_partitions(mounts: list[tuple[str, str]]) -> list[str]:
     errors = []
-    for dev, mnt in partitions:
-        result = _sp.run(["umount", mnt], capture_output=True, text=True)
+    for dev, mnt in mounts:
+        result = subprocess.run(["umount", mnt], capture_output=True, text=True)
         if result.returncode != 0:
             errors.append(f"{mnt} ({dev}): {(result.stderr or result.stdout or 'failed').strip()}")
     return errors
@@ -48,219 +69,186 @@ def _unmount_partitions(partitions: list[tuple[str, str]]) -> list[str]:
 
 class ObgApp(App):
     SCREEN_SIZE = (120, 40)
+    TITLE = "OldButGold"
 
-    def __init__(self, test_mode: bool = False, mock_path: str | None = None):
+    def __init__(self, test_mode: bool = False, mock_path: str | None = None) -> None:
         super().__init__()
         self.test_mode = test_mode
         self.mock_path = mock_path
 
-    CSS = """
-    Screen { background: #000000; }
-    #app-frame { width: 100%; height: 100%; border: solid #00ff00; background: #000000; layout: vertical; }
-    #header { dock: top; height: 1; background: #001100; color: #00ff00; padding: 0 1; text-style: bold; }
-    #body { height: 1fr; overflow-y: auto; padding: 0 1; }
-    #footer { dock: bottom; height: 1; background: #001100; color: #888888; padding: 0 1; }
+    CSS = f"""
+    Screen {{ background: {PALETTE['bg']}; }}
+    #header {{
+        dock: top; height: 1;
+        background: {PALETTE['panel']}; color: {PALETTE['muted']};
+        padding: 0 2;
+    }}
+    #body {{ height: 1fr; overflow-y: auto; padding: 0 2; }}
+    #footer {{
+        dock: bottom; height: 1;
+        background: {PALETTE['panel']}; color: {PALETTE['faint']};
+        padding: 0 2;
+    }}
 
-    /* Premium panels - double-line borders */
-    .panel { border: double #00ff00; margin: 0 1 1 1; padding: 0 1; background: #0a0a0a; }
-    .panel-warn { border: double #ffff00; margin: 0 1 1 1; padding: 0 1; background: #1a1a0a; }
-    .panel-error { border: double #ff0000; margin: 0 1 1 1; padding: 0 1; background: #1a0a0a; }
-    .panel-selected { border: double #00ff00; margin: 0 1 1 1; padding: 0 1; background: #0a1a0a; }
-    .panel-disabled { border: double #444444; margin: 0 1 1 1; padding: 0 1; background: #0a0a0a; color: #555555; }
+    .panel {{ border: solid {PALETTE['border']}; background: {PALETTE['panel']}; padding: 0 1; margin: 1 0; }}
+    .panel-title {{ color: {PALETTE['accent']}; text-style: bold; }}
+    .panel-ok {{ border: solid {PALETTE['ok']}; }}
+    .panel-warn {{ border: solid {PALETTE['warn']}; }}
+    .panel-err {{ border: solid {PALETTE['err']}; }}
 
-    /* Typography */
-    .section-title { color: #00ff00; text-style: bold; margin-top: 1; }
-    .group-title { color: #00ff00; text-style: bold; margin-top: 1; }
-    .config-group { margin: 0 0 0 2; }
-    .config-label { color: #888888; margin-top: 1; }
-    .muted { color: #888888; }
-    .warning { color: #ffff00; text-style: bold; }
-    .ok { color: #00ff00; }
-    .failed { color: #ff0000; text-style: bold; }
-    .empty-msg { content-align: center middle; height: 100%; color: #666666; }
+    .btn-row {{ height: 3; align: center middle; }}
+    .btn-row Button {{
+        width: 1fr; margin: 0 1;
+        border: solid {PALETTE['border']};
+        background: {PALETTE['panel']}; color: {PALETTE['text']};
+    }}
+    .btn-row Button:hover {{ border: solid {PALETTE['accent']}; }}
+    .btn-row Button:focus {{ border: solid {PALETTE['accent']}; color: {PALETTE['accent']}; }}
+    .btn-row Button:disabled {{ border: solid {PALETTE['border']}; color: {PALETTE['faint']}; }}
 
-    /* Step status */
-    .step-ok { color: #00ff00; }
-    .step-running { color: #ffff00; }
-    .step-failed { color: #ff0000; }
-    .step-pending { color: #666666; }
-    .step-skipped { color: #555555; }
+    .card {{
+        border: solid {PALETTE['border']};
+        background: {PALETTE['panel']};
+        margin: 1 0; padding: 0 2;
+    }}
+    .card:hover {{ border: solid {PALETTE['accent']}; }}
+    .card-selected {{ border: solid {PALETTE['accent']}; background: {PALETTE['panel-soft']}; }}
+    .card-disabled {{ border: solid {PALETTE['border']}; background: {PALETTE['panel']}; color: {PALETTE['faint']}; }}
+    .card-name {{ color: {PALETTE['text']}; text-style: bold; }}
+    .card-meta {{ color: {PALETTE['muted']}; }}
+    .card-badge {{ color: {PALETTE['warn']}; }}
 
-    /* Classification badges */
-    .gold { color: #00ff00; text-style: bold; }
-    .silver { color: #aaaaaa; text-style: bold; }
-    .bronze { color: #cd7f32; text-style: bold; }
+    .label {{ color: {PALETTE['muted']}; }}
+    .muted {{ color: {PALETTE['muted']}; }}
+    .faint {{ color: {PALETTE['faint']}; }}
+    .ok {{ color: {PALETTE['ok']}; }}
+    .warn {{ color: {PALETTE['warn']}; text-style: bold; }}
+    .err {{ color: {PALETTE['err']}; text-style: bold; }}
+    .accent {{ color: {PALETTE['accent']}; text-style: bold; }}
 
-    /* Buttons */
-    .btn-bar { height: 3; align: center middle; }
-    .btn-bar Button { width: 1fr; margin: 0 1; border: double #00ff00; background: #0a1a0a; color: #00ff00; }
-    .btn-bar Button:hover { background: #1a3a1a; }
-    .btn-bar Button:focus { border: double #00ff00; }
-    .btn-selected { border: double #00ff00; background: #0a1a0a; }
+    .step-pending {{ color: {PALETTE['faint']}; }}
+    .step-running {{ color: {PALETTE['accent']}; text-style: bold; }}
+    .step-ok {{ color: {PALETTE['ok']}; }}
+    .step-failed {{ color: {PALETTE['err']}; }}
+    .step-skipped {{ color: {PALETTE['faint']}; }}
 
-    /* Execution screen layout */
-    .steps-col { width: 30%; min-width: 25; border-right: double #00ff00; padding: 0 1; }
-    .output-col { width: 70%; min-width: 40; }
+    .metric-card {{
+        border: solid {PALETTE['border']};
+        background: {PALETTE['panel']};
+        width: 1fr; min-width: 14; min-height: 3; margin: 0 1 1 0; padding: 0 1;
+    }}
+    .metric-title {{ color: {PALETTE['faint']}; }}
+    .metric-value {{ color: {PALETTE['text']}; }}
 
-    /* Metric cards - 3-column grid */
-    .metric-card { border: solid #333333; padding: 0 1; margin: 0 0 1 0; width: 1fr; min-height: 3; }
-    .metric-card-title { color: #888888; text-style: bold; }
-    .metric-card-value { color: #00ff00; }
+    .disk-info-row {{ height: auto; }}
+    .disk-info-row > Static {{
+        width: 1fr; min-width: 14; height: 4; border: solid {PALETTE['border']};
+        background: {PALETTE['panel']};
+        margin: 0 1 0 0; padding: 0 1; content-align: center middle;
+    }}
 
-    /* Disk info row */
-    .disk-info-row { height: 3; margin: 0 1 1 1; }
-    .disk-info-row > Static { width: 1fr; border: double #00ff00; padding: 0 1; content-align: center middle; }
+    .steps-col {{ width: 30; }}
+    .output-col {{ width: 1fr; }}
+    .output-col > Horizontal {{ width: 1fr; height: auto; }}
 
-    /* Output log */
-    #output-log { margin: 0 1; min-height: 6; color: #aaaaaa; }
+    #output-log {{ width: 1fr; height: 16; margin: 1 0 0 0; background: {PALETTE['panel']}; }}
+    #output-log > Static {{ width: 1fr; color: {PALETTE['muted']}; }}
 
-    /* Progress bar */
-    ProgressBar { margin: 0 1; height: 2; }
+    #warning-box {{
+        border: solid {PALETTE['err']};
+        background: {PALETTE['panel']};
+        margin: 1 0; padding: 1 2;
+        color: {PALETTE['warn']}; text-style: bold;
+        content-align: center middle;
+    }}
 
-    /* Warning box */
-    .warning-box { border: double #ff0000; margin: 1 2; padding: 1; color: #ffff00; text-style: bold; content-align: center middle; }
+    .sep {{ height: 1; background: {PALETTE['border']}; margin: 1 0; }}
 
-    /* Section separator */
-    .separator { border-top: double #00ff00; margin: 1 0; }
+    #smart-panel {{ min-height: 8; }}
     """
 
     def on_mount(self) -> None:
-        self.push_screen(StartupScreen())
+        self.push_screen(MainScreen())
+
+    def pop_to_root(self) -> None:
+        while len(self.screen_stack) > 1 and not isinstance(self.screen_stack[-1], MainScreen):
+            self.pop_screen()
 
 
-class StartupScreen(Screen):
+class MainScreen(Screen):
     BINDINGS = [
-        Binding("left", "left", "", priority=True),
-        Binding("right", "right", "", priority=True),
-        Binding("enter", "enter", "Proceed", priority=True),
-        Binding("escape", "escape", "Exit", priority=True),
+        Binding("up", "move(-1)", "Up", priority=True),
+        Binding("down", "move(1)", "Down", priority=True),
+        Binding("enter", "select", "Select", priority=True),
+        Binding("escape", "quit_app", "Quit", priority=True),
+        Binding("r", "refresh", "Refresh"),
     ]
-
-    def __init__(self):
-        super().__init__()
-        self._selected = 0
-
-    def action_left(self) -> None:
-        self._selected = 0
-        self._update_buttons()
-
-    def action_right(self) -> None:
-        self._selected = 1
-        self._update_buttons()
-
-    def action_enter(self) -> None:
-        if self._selected == 0:
-            btn = self.query_one("#continue-btn")
-            if not btn.disabled:
-                self.app.push_screen(DriveSelectionScreen())
-        else:
-            self.app.exit()
-
-    def action_escape(self) -> None:
-        self.app.exit()
-
-    def compose(self) -> ComposeResult:
-        with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Startup", id="header")
-            with VerticalScroll(id="body"):
-                yield Static("")
-                yield Static("  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510", classes="section-title")
-                yield Static("  \u2502       O L D   B U T   G O L D       \u2502", classes="section-title")
-                yield Static("  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518", classes="section-title")
-                yield Static("")
-                yield Static("     HDD Validation & Refurbishment Toolkit", classes="config-group")
-                yield Static("")
-                with Container(classes="panel"):
-                    yield Static("  Legal Disclaimer", classes="section-title")
-                    yield Static(
-                        "  OldButGold performs hardware validation using industry-standard diagnostic utilities.\n"
-                        "  Validation results reflect only the observed condition of the storage device during execution.\n"
-                        "  No report constitutes a guarantee of future reliability, data integrity or continued operation.\n"
-                        "  Storage devices may fail without prior warning. The user remains solely responsible for\n"
-                        "  backup, data protection and all decisions made based on this report.\n"
-                        "  Use of this software is entirely at the user's own risk.",
-                    )
-                yield Static("")
-                yield Static("  Initializing...", id="init-status", classes="config-group")
-            yield Horizontal(
-                Button(" Continue ", id="continue-btn", classes="startup-btn btn-selected", disabled=True),
-                Button(" Exit ", id="exit-btn", classes="startup-btn"),
-                classes="btn-bar",
-            )
-            yield Static("  Initializing, please wait...", id="footer")
-
-    def on_mount(self) -> None:
-        self._init()
-
-    def _update_buttons(self) -> None:
-        try:
-            self.query_one("#continue-btn").remove_class("btn-selected")
-            self.query_one("#exit-btn").remove_class("btn-selected")
-            if self._selected == 0:
-                self.query_one("#continue-btn").add_class("btn-selected")
-            else:
-                self.query_one("#exit-btn").add_class("btn-selected")
-        except Exception:
-            pass
-
-    def on_button_pressed(self, event) -> None:
-        if event.button.id == "continue-btn":
-            self.app.push_screen(DriveSelectionScreen())
-        elif event.button.id == "exit-btn":
-            self.app.exit()
-
-    @work(thread=True)
-    def _init(self) -> None:
-        try:
-            disks = list_disks()
-            if self.app.mock_path:
-                disks = list_mock_disks(self.app.mock_path) + disks
-            self.app.call_from_thread(self._init_done, disks)
-        except Exception as e:
-            self.app.call_from_thread(self._init_error, str(e))
-
-    def _init_done(self, disks) -> None:
-        try:
-            self.query_one("#init-status").update(f"  Detected {len(disks)} drive(s). Ready.")
-            self.query_one("#continue-btn").disabled = False
-            self.query_one("#footer").update("  \u2190/\u2192 Navigate  Enter Select  Esc Exit")
-        except Exception:
-            pass
-
-    def _init_error(self, msg: str) -> None:
-        try:
-            self.query_one("#init-status").update(f"  Error: {msg}")
-        except Exception:
-            pass
-
-
-class DriveSelectionScreen(Screen):
-    BINDINGS = [("r", "refresh", "Refresh")]
 
     def __init__(self) -> None:
         super().__init__()
         self._disks: list[DiskInfo] = []
         self._selected = 0
+        self._ready = False
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Select Drive", id="header")
+            yield Static(f"OldButGold v{__version__}  |  Select Drive", id="header")
             with VerticalScroll(id="body"):
-                pass
+                yield Static(f"O L D   B U T   G O L D", classes="accent")
+                yield Static(f"HDD validation and refurbishment workflow", classes="muted")
+                yield Static("", classes="sep")
+                yield Static(
+                    "OldButGold validates the observable condition of a hard drive and does not"
+                    "\nguarantee future reliability. Validation is destructive: all data on the selected"
+                    "\ndrive will be permanently destroyed. Use entirely at your own risk.",
+                    classes="muted",
+                )
+                yield Static("", classes="sep")
+                yield Static("Detecting drives...", id="status", classes="muted")
+                with VerticalScroll(id="drive-list"):
+                    pass
             yield Horizontal(
-                Button(" Back ", id="back-btn"),
-                Button(" Continue ", id="continue-btn"),
+                Button(" Continue ", id="continue-btn", disabled=True),
                 Button(" Refresh ", id="refresh-btn"),
                 Button(" Quit ", id="quit-btn"),
-                classes="btn-bar",
+                classes="btn-row",
             )
-            yield Static("  \u2191/\u2193 Select   Enter Confirm   R Refresh   Esc Back", id="footer")
+            yield Static("  Up/Down select    Enter confirm    R refresh    Esc quit", id="footer")
 
     def on_mount(self) -> None:
         self._refresh()
 
+    def action_move(self, delta: int) -> None:
+        if not self._disks:
+            return
+        new_index = self._selected + delta
+        if new_index < 0 or new_index >= len(self._disks):
+            return
+        self._selected = new_index
+        self._paint_cards()
+
+    def action_select(self) -> None:
+        self._open_selected()
+
     def action_refresh(self) -> None:
         self._refresh()
+
+    def action_quit_app(self) -> None:
+        self.app.exit()
+
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "continue-btn":
+            self._open_selected()
+        elif event.button.id == "refresh-btn":
+            self._refresh()
+        elif event.button.id == "quit-btn":
+            self.app.exit()
+
+    def on_click(self, event) -> None:
+        idx = getattr(event.widget, "idx", None)
+        if idx is not None and 0 <= idx < len(self._disks):
+            self._selected = idx
+            self._open_selected()
 
     @work(thread=True)
     def _refresh(self) -> None:
@@ -270,476 +258,388 @@ class DriveSelectionScreen(Screen):
                 disks = list_mock_disks(self.app.mock_path) + disks
         except Exception:
             disks = []
-        self.app.call_from_thread(self._rebuild_with, disks)
+        self.app.call_from_thread(self._rebuild, disks)
 
-    def _rebuild_with(self, disks: list[DiskInfo]) -> None:
+    def _rebuild(self, disks: list[DiskInfo]) -> None:
         self._disks = disks
         self._selected = 0
-        self._rebuild()
+        self._ready = True
+        drive_list = self.query_one("#drive-list", VerticalScroll)
+        for child in list(drive_list.children):
+            child.remove()
+        if not disks:
+            drive_list.mount(Static("No drives detected. Press R to refresh.", classes="muted"))
+        else:
+            for i, disk in enumerate(disks):
+                drive_list.mount(self._card_for(disk, i))
+        self._paint_cards()
+        try:
+            self.query_one("#status", Static).update(f"{len(disks)} drive(s) detected")
+            self.query_one("#continue-btn", Button).disabled = not bool(disks)
+        except Exception:
+            pass
 
-    def _rebuild(self) -> None:
-        c = self.query_one("#body")
-        c.remove_children()
-        if not self._disks:
-            c.mount(Static("No drives detected. Press R to refresh.", classes="empty-msg"))
-            return
-        for i, disk in enumerate(self._disks):
-            if disk.is_supported:
-                selected = i == self._selected
-                lines = [f"  {disk.model}", f"  {disk.device}  {disk.transport}  {disk.capacity_human}"]
-                if disk.is_mounted or disk.is_boot_disk:
-                    lines.append(f"  ! WARNING: Drive contains active filesystem — all data will be destroyed !")
-                session = find_session(disk)
-                if session:
-                    total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
-                    pct = min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
-                    lines.append(f"  ! Interrupted Validation  -  {pct}%")
-                widget = Static("\n".join(lines), classes="panel-selected" if selected else "card")
-            else:
-                widget = Static(f"  {disk.model}\n  {disk.device}  {disk.capacity_human}  [Unsupported]",
-                                classes="panel-disabled")
-            widget.idx = i
-            c.mount(widget)
+    def _card_for(self, disk: DiskInfo, index: int) -> Static:
+        lines = [disk.model]
+        lines.append(f"{disk.device}  |  {disk.transport}  |  {disk.capacity_human}")
+        badges = []
+        if disk.is_mock:
+            badges.append("Mock")
+        if disk.is_boot_disk:
+            badges.append("System drive")
+        if disk.is_mounted:
+            badges.append("Mounted")
+        if disk.is_supported is False:
+            badges.append("Unsupported")
+        session = find_session(disk)
+        if session:
+            pct = self._session_pct(disk, session)
+            badges.append(f"Interrupted {pct}%")
+        if badges:
+            lines.append("  ".join(f"\\[{b}]" for b in badges))
+        widget = Static("\n".join(lines))
+        widget.idx = index
+        if not disk.is_supported:
+            widget.add_class("card-disabled")
+        else:
+            widget.add_class("card")
+        return widget
 
-    def on_key(self, event) -> None:
-        if event.key == "up":
-            self._selected = max(0, self._selected - 1)
-            self._rebuild()
-        elif event.key == "down":
-            self._selected = min(len(self._disks) - 1, self._selected + 1)
-            self._rebuild()
-        elif event.key == "enter":
-            self._select()
-        elif event.key == "escape":
-            self.app.pop_screen()
+    @staticmethod
+    def _session_pct(disk: DiskInfo, session: dict) -> int:
+        total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
+        return min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
 
-    def on_button_pressed(self, event) -> None:
-        if event.button.id == "back-btn":
-            self.app.pop_screen()
-        elif event.button.id == "continue-btn":
-            self._select()
-        elif event.button.id == "refresh-btn":
-            self._refresh()
-        elif event.button.id == "quit-btn":
-            self.app.exit()
+    def _paint_cards(self) -> None:
+        drive_list = self.query_one("#drive-list", VerticalScroll)
+        for child in drive_list.children:
+            idx = getattr(child, "idx", None)
+            if idx is None:
+                continue
+            disabled = child.has_class("card-disabled")
+            selected = idx == self._selected and not disabled
+            child.set_class(selected, "card-selected")
+            child.set_class(not selected and not disabled, "card")
 
-    def on_click(self, event) -> None:
-        idx = getattr(event.widget, 'idx', None)
-        if idx is not None and 0 <= idx < len(self._disks):
-            self._selected = idx
-            self._rebuild()
-            self._select()
-
-    def _select(self) -> None:
-        if not self._disks:
+    def _open_selected(self) -> None:
+        if not self._ready or not self._disks:
             return
         disk = self._disks[self._selected]
         if not disk.is_supported:
             return
-        if disk.is_mounted and not disk.is_mock:
-            mounts = _get_mounted_partitions(disk.device)
-            if mounts:
-                self.app.push_screen(MountWarningScreen(disk, mounts))
-                return
-        session = find_session(disk)
-        if session:
-            self.app.push_screen(SessionDecisionScreen(disk, session))
-        else:
-            self.app.push_screen(DriveInfoScreen(disk))
+        self.app.push_screen(DriveScreen(disk))
+
+    def refresh_drives(self) -> None:
+        self._refresh()
 
 
-class SessionDecisionScreen(Screen):
-    def __init__(self, disk: DiskInfo, session: dict) -> None:
+class DriveScreen(Screen):
+    BINDINGS = [
+        Binding("escape", "back", "Back", priority=True),
+        Binding("enter", "primary", "Configure", priority=True),
+    ]
+
+    def __init__(self, disk: DiskInfo) -> None:
         super().__init__()
         self.disk = disk
-        self.session = session
+        self.session = find_session(disk)
+        self.mounts: list[tuple[str, str]] = []
+        self._unmounted = False
 
     def compose(self) -> ComposeResult:
-        total_blocks = self.disk.capacity_bytes // 4096 if self.disk.capacity_bytes else 1
-        pct = min(99, int(self.session.get("badblocks_offset", 0) / total_blocks * 100))
+        self.mounts = _get_mounted_partitions(self.disk.device) if not self.disk.is_mock else []
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Session Recovery", id="header")
+            yield Static(f"OldButGold v{__version__}  |  Drive  |  {self.disk.model}", id="header")
             with VerticalScroll(id="body"):
+                with Horizontal():
+                    with Container(classes="panel"):
+                        yield Static("Device", classes="panel-title")
+                        yield Static(f"Model:      {self.disk.model}")
+                        yield Static(f"Serial:     {self.disk.serial}")
+                        yield Static(f"Firmware:   {self.disk.firmware}")
+                        yield Static(f"Capacity:   {self.disk.capacity_human}")
+                        yield Static(f"WWN:        {self.disk.wwn or 'n/a'}")
+                        yield Static(f"Device:     {self.disk.device}")
+                    with Container(classes="panel"):
+                        yield Static("Configuration", classes="panel-title")
+                        yield Static(f"Interface:      {self.disk.interface}")
+                        yield Static(f"Transport:      {self.disk.transport}")
+                        yield Static(f"SMART:          {'supported' if self.disk.smart_supported else 'not available'}")
+                        yield Static(f"Filesystem:     {self.disk.current_fs or 'none'}")
+                        yield Static(f"Partition:      {self.disk.partition_table or 'none'}")
+                        yield Static(f"Geometry:       {self.disk.logical_sector}/{self.disk.physical_sector} B (log/phys)")
                 with Container(classes="panel"):
-                    yield Static("  Interrupted Validation Session", classes="section-title")
-                    yield Static(f"  Model:         {self.disk.model}")
-                    yield Static(f"  Serial:        {self.disk.serial}")
-                    yield Static(f"  Capacity:      {self.disk.capacity_human}")
-                    yield Static(f"  Current Stage: {self.session.get('current_stage', 'Badblocks Validation')}")
-                    yield Static(f"  Completed:     {pct}%")
-                    yield Static(f"  Started:       {self.session.get('created_at', 'Unknown')}")
-                yield Static("")
-                yield Static("  This drive has an interrupted validation session.", classes="config-group")
-                yield Static("  What would you like to do?", classes="config-group")
+                    yield Static("SMART", classes="panel-title")
+                    yield Static("Collecting SMART data...", id="smart-body")
+                if self.mounts:
+                    with Container(classes="panel-warn", id="mounted-panel"):
+                        yield Static("Drive is mounted", classes="warn")
+                        for dev, mnt in self.mounts:
+                            yield Static(f"  {dev}  ->  {mnt}", classes="muted")
+                        yield Static("Partitions must be unmounted before validation.", classes="muted")
+                if self.session:
+                    with Container(classes="panel-warn", id="session-panel"):
+                        yield Static("Interrupted validation", classes="warn")
+                        yield Static(f"Stage:    {self.session.get('current_stage', 'Surface Scan (Badblocks)') or 'Surface Scan (Badblocks)'}")
+                        yield Static(f"Progress: {MainScreen._session_pct(self.disk, self.session)}%")
+                        yield Static(f"Started:  {self.session.get('created_at', 'unknown')}")
+                yield Static("", id="status", classes="muted")
             yield Horizontal(
+                Button(" Back ", id="back-btn"),
+                Button(" Unmount ", id="unmount-btn"),
                 Button(" Recover ", id="recover-btn"),
                 Button(" Restart ", id="restart-btn"),
-                Button(" View Details ", id="details-btn"),
-                Button(" Back ", id="back-btn"),
-                classes="btn-bar",
+                Button(" Configure ", id="configure-btn"),
+                classes="btn-row",
             )
-            yield Static("  Enter Select   Esc Back", id="footer")
+            yield Static("  Esc back    Enter configure", id="footer")
 
-    def on_key(self, event) -> None:
-        if event.key == "escape":
-            self.app.pop_screen()
-        elif event.key == "enter":
-            self.app.push_screen(ValidationConfigScreen(self.disk, resume=True))
+    def on_mount(self) -> None:
+        try:
+            self.query_one("#unmount-btn", Button).disabled = not (self.mounts and not self._unmounted)
+            self.query_one("#recover-btn", Button).disabled = not self.session
+            self.query_one("#restart-btn", Button).disabled = not self.session
+        except Exception:
+            pass
+        if not self.disk.is_mock:
+            self._fetch_smart()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_primary(self) -> None:
+        self._configure()
 
     def on_button_pressed(self, event) -> None:
-        if event.button.id == "recover-btn":
-            self.app.push_screen(ValidationConfigScreen(self.disk, resume=True))
-        elif event.button.id == "restart-btn":
-            complete_session(self.disk)
-            self.app.push_screen(DriveInfoScreen(self.disk))
-        elif event.button.id == "details-btn":
-            self.app.push_screen(DriveInfoScreen(self.disk, None))
-        elif event.button.id == "back-btn":
-            self.app.pop_screen()
-
-
-class MountWarningScreen(Screen):
-    def __init__(self, disk: DiskInfo, mounts: list[tuple[str, str]]) -> None:
-        super().__init__()
-        self.disk = disk
-        self.mounts = mounts
-        self._unmount_errors: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Drive Mounted", id="header")
-            with VerticalScroll(id="body"):
-                with Container(classes="panel"):
-                    yield Static(f"  {self.disk.model}", classes="section-title")
-                    yield Static(f"  {self.disk.device}  {self.disk.capacity_human}")
-                    yield Static("")
-                    yield Static("  This drive has mounted partitions:", classes="warning")
-                    for dev, mnt in self.mounts:
-                        yield Static(f"  \u2022 {dev}  \u2192  {mnt}")
-                    yield Static("")
-                    yield Static("  All data on these partitions will be")
-                    yield Static("  inaccessible until remounted.")
-                yield Static("", id="unmount-status")
-            yield Horizontal(
-                Button(" Unmount & Continue ", id="unmount-btn"),
-                Button(" Back ", id="back-btn"),
-                classes="btn-bar",
-            )
-            yield Static("  Esc Back   Enter Unmount", id="footer")
-
-    def on_key(self, event) -> None:
-        if event.key == "escape":
-            self.app.pop_screen()
-        elif event.key == "enter":
+        button_id = event.button.id
+        if button_id == "back-btn":
+            self.action_back()
+        elif button_id == "unmount-btn":
             self._do_unmount()
+        elif button_id == "recover-btn":
+            self._start_with(resume=True)
+        elif button_id == "restart-btn":
+            self._restart()
+        elif button_id == "configure-btn":
+            self._configure()
 
-    def on_button_pressed(self, event) -> None:
-        if event.button.id == "unmount-btn":
-            self._do_unmount()
-        elif event.button.id == "back-btn":
-            self.app.pop_screen()
+    def _guard_mounted(self) -> bool:
+        if self.disk.is_mock:
+            return True
+        if _get_mounted_partitions(self.disk.device):
+            self._set_status("Partitions are still mounted. Unmount first.", warn=True)
+            return False
+        return True
+
+    def _configure(self) -> None:
+        if not self._guard_mounted():
+            return
+        self.app.push_screen(ConfigScreen(self.disk, resume=False))
+
+    def _start_with(self, resume: bool) -> None:
+        if not self._guard_mounted():
+            return
+        self.app.push_screen(ConfigScreen(self.disk, resume=resume))
+
+    def _restart(self) -> None:
+        complete_session(self.disk)
+        self.session = None
+        try:
+            self.query_one("#session-panel", Container).remove()
+        except Exception:
+            pass
+        self.query_one("#recover-btn", Button).disabled = True
+        self.query_one("#restart-btn", Button).disabled = True
+        self._set_status("Interrupted session discarded.")
+        self._configure()
 
     @work(thread=True)
     def _do_unmount(self) -> None:
-        self.app.call_from_thread(self._set_status, "  Unmounting...", "info")
-        errs = _unmount_partitions(self.mounts)
-        if errs:
-            self.app.call_from_thread(self._set_status, "  " + "\n  ".join(errs), "failed")
+        self.app.call_from_thread(self._set_status, "Unmounting partitions...")
+        errors = _unmount_partitions(self.mounts)
+        if errors:
+            self.app.call_from_thread(self._set_status, "; ".join(errors), warn=True)
             return
-        self.app.call_from_thread(self._proceed)
+        self.app.call_from_thread(self._unmount_done)
 
-    def _set_status(self, msg: str, cls: str = "info") -> None:
+    def _unmount_done(self) -> None:
+        self._unmounted = True
+        self.mounts = []
         try:
-            self.query_one("#unmount-status").update(msg)
-            self.query_one("#unmount-status").remove_class("info", "failed")
-            self.query_one("#unmount-status").add_class(cls)
+            self.query_one("#mounted-panel", Container).remove()
+            self.query_one("#unmount-btn", Button).disabled = True
         except Exception:
             pass
-
-    def _proceed(self) -> None:
-        session = find_session(self.disk)
-        if session:
-            self.app.push_screen(SessionDecisionScreen(self.disk, session))
-        else:
-            self.app.push_screen(DriveInfoScreen(self.disk))
-
-
-
-
-
-class DriveInfoScreen(Screen):
-    def __init__(self, disk: DiskInfo, smart_data=None, resume: bool = False) -> None:
-        super().__init__()
-        self.disk = disk
-        self._smart_data = smart_data
-        self.resume = resume
-
-    def compose(self) -> ComposeResult:
-        with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Drive Info  /  {self.disk.model}", id="header")
-            with VerticalScroll(id="body"):
-                with Horizontal():
-                    with Container(classes="panel"):
-                        yield Static("  Device Information", classes="section-title")
-                        yield Static(f"  Model:  {self.disk.model}")
-                        yield Static(f"  Serial: {self.disk.serial}")
-                        yield Static(f"  Firmware: {self.disk.firmware}")
-                        yield Static(f"  Capacity: {self.disk.capacity_human}")
-                        yield Static(f"  WWN: {self.disk.wwn or 'N/A'}")
-                        yield Static(f"  Device: {self.disk.device}")
-                    with Container(classes="panel"):
-                        yield Static("  Configuration", classes="section-title")
-                        yield Static(f"  Interface: {self.disk.interface}")
-                        yield Static(f"  Transport: {self.disk.transport}")
-                        yield Static(f"  SMART: {'Supported' if self.disk.smart_supported else 'Not available'}")
-                        yield Static(f"  Current FS: {self.disk.current_fs or 'None'}")
-                        yield Static(f"  Partition: {self.disk.partition_table or 'None'}")
-                with Horizontal():
-                    with Container(classes="panel"):
-                        yield Static("  SMART Information", classes="section-title")
-                        yield Static("  Reading SMART data...", id="smart-panel")
-                    with Container(classes="panel"):
-                        yield Static("  Geometry", classes="section-title")
-                        yield Static(f"  Logical Sector:  {self.disk.logical_sector} B")
-                        yield Static(f"  Physical Sector: {self.disk.physical_sector} B")
-            yield Horizontal(
-                Button(" Continue ", id="continue-btn"),
-                Button(" Back ", id="back-btn"),
-                classes="btn-bar",
-            )
-            yield Static("  Esc Back   Enter Continue", id="footer")
-
-    def on_mount(self) -> None:
-        if self._smart_data is not None:
-            self._update_smart(self._smart_data)
-        else:
-            self._fetch_smart()
-
-    def on_key(self, event) -> None:
-        if event.key == "escape":
-            while len(self.app.screen_stack) > 2:
-                self.app.pop_screen()
-        elif event.key == "enter":
-            self.app.push_screen(ValidationConfigScreen(self.disk, resume=self.resume))
-
-    def on_button_pressed(self, event) -> None:
-        if event.button.id == "continue-btn":
-            self.app.push_screen(ValidationConfigScreen(self.disk, resume=self.resume))
-        elif event.button.id == "back-btn":
-            while len(self.app.screen_stack) > 2:
-                self.app.pop_screen()
+        self._set_status("Partitions unmounted.")
 
     @work(thread=True)
     def _fetch_smart(self) -> None:
-        if self.disk.is_mock:
-            self.app.call_from_thread(self._update_smart, None)
-            return
         try:
             sd = read_smart(self.disk.device)
-            self.app.call_from_thread(self._update_smart, sd)
         except Exception:
-            self.app.call_from_thread(self._update_smart, None)
+            sd = None
+        self.app.call_from_thread(self._show_smart, sd)
 
-    def _update_smart(self, sd) -> None:
+    def _show_smart(self, sd) -> None:
         try:
-            panel = self.query_one("#smart-panel")
-            if sd:
-                panel.update(
-                    f"  Health: {sd.overall_health}\n"
-                    f"  Temp: {sd.temperature or 'N/A'} C\n"
-                    f"  Power-on: {sd.power_on_hours or 'N/A'} h\n"
-                    f"  Power Cycles: {sd.power_cycle_count or 'N/A'}\n"
-                    f"  Reallocated: {sd.reallocated_sectors}\n"
-                    f"  Pending: {sd.pending_sectors}\n"
-                    f"  Uncorrectable: {sd.uncorrectable_sectors}\n"
-                    f"  CRC Errors: {sd.crc_errors}"
-                )
-            else:
-                panel.update("  SMART not available")
+            panel = self.query_one("#smart-body", Static)
+            if not sd:
+                panel.update("SMART data not available for this drive.")
+                return
+            panel.update(
+                f"Health:  {sd.overall_health}"
+                f"\nTemp:    {sd.temperature if sd.temperature is not None else 'n/a'} C"
+                f"\nPower-on: {sd.power_on_hours if sd.power_on_hours is not None else 'n/a'} h"
+                f"\nCycles:  {sd.power_cycle_count if sd.power_cycle_count is not None else 'n/a'}"
+                f"\nReallocated:  {sd.reallocated_sectors}"
+                f"\nPending:      {sd.pending_sectors}"
+                f"\nUncorrectable: {sd.uncorrectable_sectors}"
+                f"\nCRC errors:   {sd.crc_errors}"
+            )
+        except Exception:
+            pass
+
+    def _set_status(self, message: str, warn: bool = False) -> None:
+        try:
+            widget = self.query_one("#status", Static)
+            widget.update(message)
+            widget.set_class(warn, "warn")
+            widget.set_class(not warn, "muted")
         except Exception:
             pass
 
 
-class ValidationConfigScreen(Screen):
-    BINDINGS = [("escape", "go_back")]
+class ConfigScreen(Screen):
+    BINDINGS = [
+        Binding("escape", "back", "Back", priority=True),
+        Binding("enter", "primary", "Start", priority=True),
+    ]
+
+    PROFILE_DESCRIPTIONS = {
+        "recommended": "Two destructive patterns (0xaa / 0x55) with 4 KiB blocks. Balanced validation time.",
+        "extended": "Native badblocks defaults: all four patterns, maximum coverage, longer runtime.",
+    }
 
     def __init__(self, disk: DiskInfo, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
         self.resume = resume
         self.config = load_config()
-        self.FS_OPTIONS = VALID_FILESYSTEMS
-        self.PROFILES = [p.capitalize() for p in VALID_PROFILES]
-        self.PROFILE_DESCRIPTIONS = {
-            "recommended": "Optimized validation created for OldButGold.\nUses two destructive validation patterns (0xAA and 0x55)\nwith 4 KiB blocks for significantly faster validation.",
-            "extended": "Original native badblocks destructive validation\nusing all default patterns for maximum confidence.",
-        }
-        self._profile_idx = next((i for i, p in enumerate(VALID_PROFILES) if p == self.config["profile"]), 0)
-        self._fs_idx = self.FS_OPTIONS.index(self.config["filesystem"]) if self.config["filesystem"] in self.FS_OPTIONS else 0
+        self._profile_idx = VALID_PROFILES.index(self.config["profile"]) if self.config["profile"] in VALID_PROFILES else 0
+        self._fs_idx = VALID_FILESYSTEMS.index(self.config["filesystem"]) if self.config["filesystem"] in VALID_FILESYSTEMS else 0
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Configuration", id="header")
+            yield Static(f"OldButGold v{__version__}  |  Configure", id="header")
             with VerticalScroll(id="body"):
                 with Container(classes="panel"):
-                    yield Static("  Validation Profile", classes="section-title")
-                    for p in self.PROFILES:
-                        cls = "panel-selected" if p.lower() == self.PROFILES[self._profile_idx].lower() else "panel"
-                        yield Static(f"  {p}", id=f"prof-{p.lower()}", classes=cls)
-                yield Static("", id="profile-desc")
-                with Container(classes="panel"):
-                    yield Static("  Filesystem", classes="section-title")
-                    for f in self.FS_OPTIONS:
-                        cls = "panel-selected" if f == self.FS_OPTIONS[self._fs_idx] else "panel"
-                        yield Static(f"  {f}", id=f"fs-{f}", classes=cls)
-                with Container(classes="panel"):
-                    yield Static("  Volume Label (optional)", classes="section-title")
-                    yield Input(value=self.config.get("label", ""), id="label-input")
-            yield Horizontal(
-                Button(" Back ", id="back-btn"),
-                Button(" Continue ", id="continue-btn"),
-                classes="btn-bar",
-            )
-            yield Static("  Esc Back   Enter Continue", id="footer")
-
-    def on_mount(self) -> None:
-        try:
-            self.query_one("#label-input").focus()
-        except Exception:
-            pass
-        self._update_description()
-
-    def on_key(self, event) -> None:
-        if event.key == "up" and not isinstance(self.focused, Input):
-            self._move(-1, -1)
-        elif event.key == "down" and not isinstance(self.focused, Input):
-            self._move(1, 1)
-        elif event.key == "left" and not isinstance(self.focused, Input):
-            self._move(-1, 0)
-        elif event.key == "right" and not isinstance(self.focused, Input):
-            self._move(1, 0)
-        elif event.key == "enter" and not isinstance(self.focused, Input):
-            self._continue()
-
-    def on_click(self, event) -> None:
-        cid = getattr(event.widget, 'id', None)
-        if cid and cid.startswith("prof-"):
-            p = cid[5:]
-            if p in VALID_PROFILES:
-                self._profile_idx = VALID_PROFILES.index(p)
-                self._update_labels()
-        elif cid and cid.startswith("fs-"):
-            f = cid[3:]
-            if f in self.FS_OPTIONS:
-                self._fs_idx = self.FS_OPTIONS.index(f)
-                self._update_labels()
-
-    def _move(self, direction: int, axis: int) -> None:
-        if axis == 1:
-            self._profile_idx = (self._profile_idx + direction) % len(self.PROFILES)
-        else:
-            if direction > 0:
-                self._fs_idx = (self._fs_idx + 1) % len(self.FS_OPTIONS)
-            else:
-                self._fs_idx = (self._fs_idx - 1) % len(self.FS_OPTIONS)
-        self._update_labels()
-
-    def _update_labels(self) -> None:
-        for p in self.PROFILES:
-            try:
-                w = self.query_one(f"#prof-{p.lower()}")
-                sel = p.lower() == self.PROFILES[self._profile_idx].lower()
-                w.set_class(sel, "panel-selected")
-                w.set_class(not sel, "panel")
-                w.update(f"  {p}")
-            except Exception:
-                pass
-        for f in self.FS_OPTIONS:
-            try:
-                w = self.query_one(f"#fs-{f}")
-                sel = f == self.FS_OPTIONS[self._fs_idx]
-                w.set_class(sel, "panel-selected")
-                w.set_class(not sel, "panel")
-                w.update(f"  {f}")
-            except Exception:
-                pass
-        self._update_description()
-
-    def _update_description(self) -> None:
-        name = VALID_PROFILES[self._profile_idx]
-        desc = self.PROFILE_DESCRIPTIONS.get(name, "")
-        try:
-            self.query_one("#profile-desc").update(f"  {desc}")
-        except Exception:
-            pass
-
-    def action_go_back(self) -> None:
-        self.app.pop_screen()
-
-    def on_button_pressed(self, event) -> None:
-        if event.button.id == "back-btn":
-            self.app.pop_screen()
-        elif event.button.id == "continue-btn":
-            self._continue()
-
-    def _continue(self) -> None:
-        self.config["profile"] = self.PROFILES[self._profile_idx].lower()
-        self.config["filesystem"] = self.FS_OPTIONS[self._fs_idx]
-        label = self.query_one("#label-input").value.strip()
-        self.config["label"] = label
-        save_config(self.config)
-        self.app.push_screen(FinalConfirmationScreen(self.disk, self.config, resume=self.resume))
-
-
-class FinalConfirmationScreen(Screen):
-    def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:
-        super().__init__()
-        self.disk = disk
-        self.config = config
-        self.resume = resume
-
-    def compose(self) -> ComposeResult:
-        with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Confirm", id="header")
-            with VerticalScroll(id="body"):
-                with Container(classes="panel"):
-                    yield Static("  Validation Summary", classes="section-title")
-                    yield Static(f"  Drive:  {self.disk.model}")
-                    yield Static(f"  Serial: {self.disk.serial}")
-                    yield Static(f"  Capacity: {self.disk.capacity_human}")
-                    yield Static("")
-                    yield Static(f"  Profile:     {self.config['profile'].title()}")
-                    yield Static(f"  Filesystem:  {self.config['filesystem']}")
-                    yield Static(f"  Label:       {self.config.get('label', '(none)') or '(none)'}")
-                if self.disk.is_mounted or self.disk.is_boot_disk:
-                    yield Static("  DRIVE HAS AN ACTIVE FILESYSTEM!\n  ALL EXISTING DATA WILL BE PERMANENTLY DESTROYED!", classes="warning-box")
-                else:
-                    yield Static("  ALL EXISTING DATA WILL BE PERMANENTLY DESTROYED!", classes="warning-box")
+                    yield Static(f"Drive:  {self.disk.model}", classes="panel-title")
+                    yield Static(f"Serial: {self.disk.serial}   |   Capacity: {self.disk.capacity_human}", classes="muted")
+                yield Static("Validation Profile", classes="panel-title")
+                for profile in VALID_PROFILES:
+                    widget = Static(f"{profile.title()}\n{self.PROFILE_DESCRIPTIONS[profile]}", id=f"prof-{profile}", classes="card")
+                    widget.idx = VALID_PROFILES.index(profile)
+                    yield widget
+                yield Static("Filesystem", classes="panel-title")
+                for fs in VALID_FILESYSTEMS:
+                    widget = Static(fs.upper(), id=f"fs-{fs}", classes="card")
+                    widget.idx = VALID_FILESYSTEMS.index(fs)
+                    yield widget
+                yield Static("Volume Label (optional)", classes="panel-title")
+                yield Input(value=self.config.get("label", ""), id="label-input")
+                yield Static(
+                    "All existing data on this drive will be permanently destroyed.",
+                    id="warning-box",
+                )
+                yield Static("", id="status", classes="muted")
             yield Horizontal(
                 Button(" Back ", id="back-btn"),
                 Button(" Start Validation ", id="start-btn"),
-                classes="btn-bar",
+                classes="btn-row",
             )
-            yield Static("  Esc Back   Enter Start", id="footer")
+            yield Static("  Left/Right change    Tab label    Enter start    Esc back", id="footer")
+
+    def on_mount(self) -> None:
+        self._paint()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_primary(self) -> None:
+        self._start()
 
     def on_key(self, event) -> None:
-        if event.key == "escape":
-            self.app.pop_screen()
-        elif event.key == "enter":
-            self._start()
+        if isinstance(self.focused, Input):
+            return
+        if event.key == "left":
+            self._cycle("profile", -1)
+        elif event.key == "right":
+            self._cycle("profile", 1)
+        elif event.key == "up":
+            self._cycle("fs", -1)
+        elif event.key == "down":
+            self._cycle("fs", 1)
+
+    def on_click(self, event) -> None:
+        widget_id = getattr(event.widget, "id", None)
+        idx = getattr(event.widget, "idx", None)
+        if widget_id and widget_id.startswith("prof-") and idx is not None:
+            self._profile_idx = idx
+            self._paint()
+        elif widget_id and widget_id.startswith("fs-") and idx is not None:
+            self._fs_idx = idx
+            self._paint()
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "back-btn":
-            self.app.pop_screen()
+            self.action_back()
         elif event.button.id == "start-btn":
             self._start()
 
+    def _cycle(self, group: str, delta: int) -> None:
+        if group == "profile":
+            self._profile_idx = (self._profile_idx + delta) % len(VALID_PROFILES)
+        else:
+            self._fs_idx = (self._fs_idx + delta) % len(VALID_FILESYSTEMS)
+        self._paint()
+
+    def _paint(self) -> None:
+        for profile in VALID_PROFILES:
+            try:
+                widget = self.query_one(f"#prof-{profile}", Static)
+                widget.set_class(VALID_PROFILES.index(profile) == self._profile_idx, "card-selected")
+                widget.set_class(VALID_PROFILES.index(profile) != self._profile_idx, "card")
+            except Exception:
+                pass
+        for fs in VALID_FILESYSTEMS:
+            try:
+                widget = self.query_one(f"#fs-{fs}", Static)
+                widget.set_class(VALID_FILESYSTEMS.index(fs) == self._fs_idx, "card-selected")
+                widget.set_class(VALID_FILESYSTEMS.index(fs) != self._fs_idx, "card")
+            except Exception:
+                pass
+
     def _start(self) -> None:
+        self.config["profile"] = VALID_PROFILES[self._profile_idx]
+        self.config["filesystem"] = VALID_FILESYSTEMS[self._fs_idx]
+        try:
+            self.config["label"] = self.query_one("#label-input", Input).value.strip()
+        except Exception:
+            self.config["label"] = ""
+        save_config(self.config)
         self.app.push_screen(ExecutionScreen(self.disk, self.config, resume=self.resume))
 
 
-
 class ExecutionScreen(Screen):
+    STEP_ICONS = {
+        StepStatus.PENDING: ("[ ]", "step-pending"),
+        StepStatus.RUNNING: ("[>]", "step-running"),
+        StepStatus.OK: ("[x]", "step-ok"),
+        StepStatus.FAILED: ("[!]", "step-failed"),
+        StepStatus.SKIPPED: ("[-]", "step-skipped"),
+        StepStatus.CANCELLED: ("[/]", "step-skipped"),
+    }
+
     def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:
         super().__init__()
         self.disk = disk
@@ -749,41 +649,36 @@ class ExecutionScreen(Screen):
         self._start_time = time.monotonic()
         self._cancelled = False
         self._done = False
-        self._bb_progress = 0.0
-        self._bb_eta = ""
-        self._bb_operation = ""
-        self._bb_pattern = "—"
-        self._bb_elapsed_str = "—"
-        self._bb_speed = 0.0
-        self._bb_errors = (0, 0, 0)
-        self._bb_bad_count = 0
-        self._bb_test_mode = False
-        self._last_pct_time = 0.0
+        self._log_lines: list[str] = []
+        self._operation = "Preparing"
+        self._progress = 0.0
+        self._eta = ""
+        self._speed = 0.0
+        self._pattern = ""
+        self._elapsed = ""
+        self._errors = (0, 0, 0)
+        self._bad_blocks = 0
+        self._test_mode = self.app.test_mode
         self._last_pct = 0.0
-        self._bb_blocksize = 4096
+        self._last_pct_time = 0.0
         self._current_step = ""
-        if disk.capacity_bytes:
-            self._bb_total_blocks = disk.capacity_bytes // self._bb_blocksize
-        else:
-            self._bb_total_blocks = 0
 
     def compose(self) -> ComposeResult:
-        mode = "  [TEST MODE]" if self.app.test_mode else ""
+        mode = "  |  TEST MODE" if self.app.test_mode else ""
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Validation{mode}", id="header")
+            yield Static(f"OldButGold v{__version__}  |  Validation{mode}", id="header")
             with Horizontal(id="body"):
                 with VerticalScroll(classes="steps-col"):
-                    yield Static("  Validation Stages", classes="section-title")
-                    for s in PIPELINE_STAGES:
-                        w = Static(f"  [ ]  {s}", classes="step-pending")
-                        self._step_widgets[s] = w
-                        yield w
+                    yield Static("Stages", classes="panel-title")
+                    for step in PIPELINE_STAGES:
+                        widget = Static(f"[ ]  {step}", classes="step-pending")
+                        self._step_widgets[step] = widget
+                        yield widget
                 with VerticalScroll(classes="output-col"):
-                    yield ProgressBar(total=100, id="bb-progress", show_eta=False)
                     with Horizontal():
                         yield Static("Operation\n—", id="m-op", classes="metric-card")
                         yield Static("Progress\n—", id="m-pct", classes="metric-card")
-                        yield Static("ETA\n--:--", id="m-eta", classes="metric-card")
+                        yield Static("ETA\n—", id="m-eta", classes="metric-card")
                     with Horizontal():
                         yield Static("Speed\n—", id="m-spd", classes="metric-card")
                         yield Static("Pattern\n—", id="m-pat", classes="metric-card")
@@ -791,28 +686,24 @@ class ExecutionScreen(Screen):
                     with Horizontal():
                         yield Static("Bad Blocks\n—", id="m-bad", classes="metric-card")
                         yield Static("Errors\n—", id="m-err", classes="metric-card")
-                        yield Static("Status\n—", id="m-temp", classes="metric-card")
+                        yield Static("Status\n—", id="m-status", classes="metric-card")
                     with Horizontal(classes="disk-info-row"):
                         yield Static("", id="disk-model")
                         yield Static("", id="disk-serial")
                         yield Static("", id="disk-smart")
-                    yield Static("", id="output-log", classes="panel")
-            yield Static("  [C] Cancel  \u2014  Elapsed: 00:00:00", id="footer")
+                    with VerticalScroll(id="output-log"):
+                        yield Static("", id="output-log-text")
+            yield Static("  [C] Cancel   |   Elapsed 00:00:00", id="footer")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._tick)
-        self._update_progress()
         try:
-            smart_status = ""
-            if self.disk.smart_supported:
-                sd = read_smart(self.disk.device)
-                if sd:
-                    smart_status = f"Temp: {sd.get('temperature', 'N/A')}°C  Health: {sd.get('health', 'N/A')}"
-            self.query_one("#disk-model", Static).update(f"  Model\n  {self.disk.model}")
-            self.query_one("#disk-serial", Static).update(f"  Serial\n  {self.disk.serial}")
-            self.query_one("#disk-smart", Static).update(f"  {smart_status}" if smart_status else "  SMART\n  —")
+            self.query_one("#disk-model", Static).update(f"Model\n{self.disk.model}")
+            self.query_one("#disk-serial", Static).update(f"Serial\n{self.disk.serial}")
         except Exception:
             pass
+        if self.disk.smart_supported and not self.disk.is_mock:
+            self._fetch_smart()
         self._run()
 
     def on_key(self, event) -> None:
@@ -822,154 +713,27 @@ class ExecutionScreen(Screen):
     def _tick(self) -> None:
         if self._done:
             return
-        e = int(time.monotonic() - self._start_time)
-        h, m, s = e // 3600, (e % 3600) // 60, e % 60
-        self._update_progress()
+        elapsed = _fmt_duration(time.monotonic() - self._start_time)
         try:
-            self.query_one("#footer").update(f"  [C] Cancel  \u2014  Elapsed: {h:02d}:{m:02d}:{s:02d}")
+            self.query_one("#footer", Static).update(f"  [C] Cancel   |   Elapsed {elapsed}")
         except Exception:
             pass
 
-    def _on_step(self, name: str, status: StepStatus) -> None:
-        self.app.call_from_thread(self._update_step, name, status)
-
-    def _update_step(self, name: str, status: StepStatus) -> None:
-        icons = {
-            StepStatus.RUNNING: ("[\u25b6]", "step-running"),
-            StepStatus.OK: ("[\u2713]", "step-ok"),
-            StepStatus.FAILED: ("[\u2717]", "step-failed"),
-            StepStatus.SKIPPED: ("[-]", "step-skipped"),
-            StepStatus.CANCELLED: ("[/]", "step-skipped"),
-            StepStatus.PENDING: ("[ ]", "step-pending"),
-        }
-        icon, css = icons.get(status, ("[ ]", "step-pending"))
-        w = self._step_widgets.get(name)
-        if w:
-            w.update(f"  {icon}  {name}")
-            w.remove_class("step-pending", "step-running", "step-ok", "step-failed", "step-skipped")
-            w.add_class(css)
-        if status == StepStatus.RUNNING:
-            self._current_step = name
-            self._show_step_info(name)
-
-    def _show_step_info(self, name: str) -> None:
-        self._bb_operation = name
-        self._bb_progress = 0
-        self._bb_eta = ""
-        self._bb_speed = 0
-        self._bb_errors = (0, 0, 0)
+    @work(thread=True)
+    def _fetch_smart(self) -> None:
         try:
-            self.query_one("#bb-progress", ProgressBar).update(progress=0)
-            for wid in ("m-op", "m-pct", "m-eta", "m-spd", "m-pat", "m-elapsed", "m-bad", "m-err", "m-temp"):
-                self.query_one(f"#{wid}", Static).update("—")
-            self.query_one("#m-op", Static).update(f"Operation\n{name}")
-            self.query_one("#output-log", Static).update("")
+            sd = read_smart(self.disk.device)
         except Exception:
-            pass
+            sd = None
+        self.app.call_from_thread(self._show_smart, sd)
 
-    def _on_output(self, line: str) -> None:
-        self.app.call_from_thread(self._append, line)
-
-    def _append(self, line: str) -> None:
-        if "TEST MODE" in line:
-            self._bb_test_mode = True
-            self._bb_operation = "Writing (test mode)"
-            self._update_progress()
+    def _show_smart(self, sd) -> None:
+        if not sd:
             return
-        if "RESUME" in line and "resuming from" in line:
-            self._update_progress()
-            return
-        if line.startswith("SMART comparison completed"):
-            self._bb_operation = "SMART Comparison"
-            self._bb_progress = 100
-            self._update_progress()
-            try:
-                self.query_one("#output-log").update(line.replace("SMART comparison completed:\n", "").replace("\n", "\n"))
-            except Exception:
-                pass
-            return
-        sm = re.search(r'SMART test:\s*(\d+)% complete.*?(?:ETA\s+(\d+)m(\d+)s)?', line)
-        if sm:
-            pct = int(sm.group(1))
-            self._bb_progress = float(pct)
-            self._bb_operation = "SMART Short Self-Test"
-            self._bb_pattern = "—"
-            if sm.group(2):
-                self._bb_eta = f"{sm.group(2)}m{sm.group(3)}s"
-            self._update_progress()
-            return
-        pm = re.search(r'(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed\.?\s*(?:\((\d+)/(\d+)/(\d+)\s*errors?\))?', line)
-        if pm:
-            pat = pm.group(1)
-            if pat:
-                self._bb_pattern = pat
-                self._bb_operation = f"Writing {pat}"
-            elif self._bb_operation in ("Preparing...", "SMART Short Self-Test", "SMART test:", "Surface Scan (Badblocks)", "Surface Scan"):
-                self._bb_operation = "Writing (destructive)"
-            now = time.monotonic()
-            pct = float(pm.group(2))
-            self._bb_progress = pct
-            self._bb_elapsed_str = pm.group(3)
-            if pm.group(4):
-                self._bb_errors = (int(pm.group(4)), int(pm.group(5)), int(pm.group(6)))
-            if pct > self._last_pct:
-                elapsed_since = now - self._last_pct_time
-                pct_delta = pct - self._last_pct
-                if elapsed_since > 0 and pct_delta > 0:
-                    rate = pct_delta / elapsed_since
-                    remaining_pct = 100 - pct
-                    eta_s = remaining_pct / rate if rate > 0 else 0
-                    self._bb_eta = _format_eta(eta_s)
-                    total_bytes = self.disk.capacity_bytes
-                    if total_bytes > 0:
-                        self._bb_speed = (rate / 100) * total_bytes / 1_000_000
-                self._last_pct = pct
-                self._last_pct_time = now
-            self._update_progress()
-            return
-        if line.strip().isdigit():
-            self._bb_bad_count += 1
-            self._update_progress()
-            return
-        bm = re.search(r'(\d+),\s+(\d+)\s+bad\s+blocks?\s+found', line)
-        if bm:
-            self._bb_bad_count = int(bm.group(2))
-
-    def _update_progress(self) -> None:
         try:
-            self.query_one("#bb-progress", ProgressBar).update(progress=self._bb_progress)
-        except Exception:
-            pass
-        pct = self._bb_progress
-        r, w, c = self._bb_errors
-        mode_tag = " [TEST MODE]" if self._bb_test_mode else ""
-        has_errors = r > 0 or w > 0 or c > 0
-        is_badblocks = any(kw in self._bb_operation for kw in ("Writing", "pattern"))
-        op_display = self._bb_operation + mode_tag
-        try:
-            self.query_one("#m-op", Static).update(f"Operation\n{op_display}")
-            if is_badblocks or pct > 0:
-                self.query_one("#m-pct", Static).update(f"Progress\n{pct:.1f}%")
-            if self._bb_eta:
-                self.query_one("#m-eta", Static).update(f"ETA\n{self._bb_eta}")
-            if self._bb_speed > 0:
-                self.query_one("#m-spd", Static).update(f"Speed\n{self._bb_speed:.1f} MB/s")
-            if self._bb_pattern and is_badblocks:
-                self.query_one("#m-pat", Static).update(f"Pattern\n{self._bb_pattern}")
-            if self._bb_elapsed_str and is_badblocks:
-                self.query_one("#m-elapsed", Static).update(f"Elapsed\n{self._bb_elapsed_str}")
-            if self._bb_bad_count > 0:
-                self.query_one("#m-bad", Static).update(f"Bad Blocks\n{self._bb_bad_count:,}")
-            elif is_badblocks:
-                self.query_one("#m-bad", Static).update(f"Bad Blocks\nNone")
-            if has_errors:
-                self.query_one("#m-err", Static).update(f"Errors\n{r}/{w}/{c} (R/W/C)")
-            elif is_badblocks:
-                self.query_one("#m-err", Static).update(f"Errors\nNone")
-            if is_badblocks:
-                self.query_one("#m-temp", Static).update(f"Status\nDestructive Test")
-            elif pct > 0:
-                self.query_one("#m-temp", Static).update(f"Status\nRunning")
+            self.query_one("#disk-smart", Static).update(
+                f"SMART\n{sd.overall_health}  {sd.temperature if sd.temperature is not None else 'n/a'} C"
+            )
         except Exception:
             pass
 
@@ -988,16 +752,142 @@ class ExecutionScreen(Screen):
                 test_mode=self.app.test_mode,
                 resume=self.resume,
             )
-            self.app.call_from_thread(self._complete, result, None)
+            self.app.call_from_thread(self._finish, result, None)
         except Exception as e:
-            import traceback as _tb
-            _full = "".join(_tb.format_exception(type(e), e, e.__traceback__))
-            from obg.utils import logger
-            logger.error("PIPELINE", f"Pipeline failed:\n{_full}")
-            self.app.call_from_thread(self._on_output, f"ERROR: {e}")
-            self.app.call_from_thread(self._complete, None, _full)
+            import traceback
 
-    def _complete(self, result, error: str | None = None) -> None:
+            full = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+            from obg.utils import logger
+
+            logger.error("PIPELINE", f"Pipeline failed:\n{full}")
+            self.app.call_from_thread(self._finish, None, full)
+
+    def _on_step(self, name: str, status: StepStatus) -> None:
+        self.app.call_from_thread(self._update_step, name, status)
+
+    def _update_step(self, name: str, status: StepStatus) -> None:
+        icon, css = self.STEP_ICONS.get(status, ("[ ]", "step-pending"))
+        widget = self._step_widgets.get(name)
+        if widget:
+            widget.update(f"{icon}  {name}")
+            for cls in ("step-pending", "step-running", "step-ok", "step-failed", "step-skipped"):
+                widget.remove_class(cls)
+            widget.add_class(css)
+        if status == StepStatus.RUNNING:
+            self._current_step = name
+            self._operation = name
+            self._reset_metrics()
+
+    def _reset_metrics(self) -> None:
+        self._progress = 0.0
+        self._eta = ""
+        self._speed = 0.0
+        self._errors = (0, 0, 0)
+        try:
+            for metric_id in ("m-pct", "m-eta", "m-spd", "m-pat", "m-elapsed", "m-err", "m-bad", "m-status"):
+                self.query_one(f"#{metric_id}", Static).update("—")
+            self.query_one("#m-op", Static).update(f"Operation\n{self._operation}")
+            self._log_lines = []
+            self.query_one("#output-log-text", Static).update("")
+        except Exception:
+            pass
+
+    def _on_output(self, line: str) -> None:
+        self.app.call_from_thread(self._append, line)
+
+    def _append(self, line: str) -> None:
+        line = line.strip()
+        if not line:
+            return
+        if "TEST MODE" in line:
+            self._test_mode = True
+            return
+        smart_match = re.match(r"SMART test:\s*(\d+)% complete", line)
+        if smart_match:
+            self._operation = "SMART Short Self-Test"
+            self._progress = float(smart_match.group(1))
+            eta_match = re.search(r"ETA\s+(\d+)m(\d+)s", line)
+            self._eta = f"{eta_match.group(1)}m{eta_match.group(2)}s" if eta_match else ""
+            self._paint()
+            return
+        bb_match = re.match(
+            r"(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed\.?\s*(?:\((\d+)/(\d+)/(\d+)\s*errors?\))?",
+            line,
+        )
+        if bb_match:
+            pattern, pct, elapsed, r, w, c = bb_match.groups()
+            if pattern:
+                self._pattern = pattern
+                self._operation = f"Writing {pattern}"
+            elif not self._operation or "SMART" in self._operation:
+                self._operation = "Writing"
+            self._progress = float(pct)
+            self._elapsed = elapsed
+            if r is not None:
+                self._errors = (int(r), int(w), int(c))
+            self._estimate_eta()
+            self._paint()
+            return
+        if line.isdigit():
+            self._bad_blocks += 1
+            self._paint()
+            return
+        summary_match = re.match(r"(?:Pass completed,)?\s*(\d+)(?:,\s+(\d+))?\s+bad\s+blocks?\s+found", line)
+        if summary_match:
+            self._bad_blocks = int(summary_match.group(2) or summary_match.group(1))
+            self._paint()
+            return
+        self._log(line)
+
+    def _estimate_eta(self) -> None:
+        now = time.monotonic()
+        if self._progress > self._last_pct and now - self._last_pct_time > 0.5:
+            pct_delta = self._progress - self._last_pct
+            dt = now - self._last_pct_time
+            if pct_delta > 0 and dt > 0:
+                remaining = (100 - self._progress) / (pct_delta / dt)
+                self._eta = _fmt_duration(remaining)
+                if self.disk.capacity_bytes:
+                    self._speed = (pct_delta / dt) / 100 * self.disk.capacity_bytes / 1_000_000
+            self._last_pct = self._progress
+            self._last_pct_time = now
+
+    def _log(self, line: str) -> None:
+        self._log_lines.append(line)
+        del self._log_lines[:-60]
+        try:
+            log = self.query_one("#output-log", VerticalScroll)
+            self.query_one("#output-log-text", Static).update("\n".join(self._log_lines[-20:]))
+            log.scroll_end(animate=False)
+        except Exception:
+            pass
+
+    def _paint(self) -> None:
+        mode_tag = " [TEST MODE]" if self._test_mode else ""
+        is_scan = "Writing" in self._operation or "pattern" in self._operation.lower()
+        try:
+            self.query_one("#m-op", Static).update(f"Operation\n{self._operation}{mode_tag}")
+            if is_scan or self._progress > 0:
+                self.query_one("#m-pct", Static).update(f"Progress\n{self._progress:.1f}%")
+            if self._eta:
+                self.query_one("#m-eta", Static).update(f"ETA\n{self._eta}")
+            if self._speed > 0:
+                self.query_one("#m-spd", Static).update(f"Speed\n{self._speed:.1f} MB/s")
+            if self._pattern and is_scan:
+                self.query_one("#m-pat", Static).update(f"Pattern\n{self._pattern}")
+            if self._elapsed and is_scan:
+                self.query_one("#m-elapsed", Static).update(f"Elapsed\n{self._elapsed}")
+            if is_scan:
+                self.query_one("#m-bad", Static).update(f"Bad Blocks\n{self._bad_blocks if self._bad_blocks else 'none'}")
+            r, w, c = self._errors
+            if is_scan:
+                self.query_one("#m-err", Static).update(f"Errors\n{r}/{w}/{c}" if (r or w or c) else "Errors\nnone")
+            if is_scan:
+                self.query_one("#m-status", Static).update("Status\nDestructive scan")
+        except Exception:
+            pass
+
+    def _finish(self, result: OperationResult | None, error: str | None) -> None:
         self._done = True
         try:
             self.app.push_screen(CompleteScreen(self.disk, self.config, result, error=error))
@@ -1006,7 +896,10 @@ class ExecutionScreen(Screen):
 
 
 class CompleteScreen(Screen):
-    BINDINGS = [("q", "quit", "Quit")]
+    BINDINGS = [
+        Binding("enter", "another", "Another", priority=True),
+        Binding("q", "quit_app", "Quit"),
+    ]
 
     def __init__(self, disk: DiskInfo, config: dict, result: OperationResult | None, error: str | None = None) -> None:
         super().__init__()
@@ -1014,125 +907,103 @@ class CompleteScreen(Screen):
         self.config = config
         self.result = result
         self.error = error
-        self._report_exported = False
 
     def compose(self) -> ComposeResult:
         with Container(id="app-frame"):
-            yield Static(f"OldButGold v{__version__}  /  Complete", id="header")
+            yield Static(f"OldButGold v{__version__}  |  Complete", id="header")
             with VerticalScroll(id="body"):
                 if self.result:
-                    r = self.result
-                    cls_val = r.classification.classification.value
-                    with Container(classes="panel"):
-                        yield Static(f"  {cls_val}", classes=cls_val.lower())
-                    with Container(classes="panel"):
-                        yield Static(f"  {self.disk.model}")
-                        yield Static(f"  {self.disk.serial}  |  {self.disk.capacity_human}")
-                    with Container(classes="panel"):
-                        yield Static(f"  Filesystem:    {self.config['filesystem']}")
-                        yield Static(f"  Label:         {self.config['label'] or '(none)'}")
-                        yield Static(f"  Bad Blocks:    {r.snapshot.badblocks_count}")
-                    sb = r.snapshot.smart_before
-                    sa = r.snapshot.smart_after
-                    with Container(classes="panel"):
-                        yield Static("  SMART Comparison", classes="section-title")
-                        if sb and sa:
-                            for label, before, after, delta_val in [
-                                ("Reallocated Sectors", sb.reallocated_sectors, sa.reallocated_sectors, r.snapshot.smart_delta.reallocated if r.snapshot.smart_delta else None),
-                                ("Pending Sectors", sb.pending_sectors, sa.pending_sectors, r.snapshot.smart_delta.pending if r.snapshot.smart_delta else None),
-                                ("Uncorrectable Sectors", sb.uncorrectable_sectors, sa.uncorrectable_sectors, r.snapshot.smart_delta.uncorrectable if r.snapshot.smart_delta else None),
-                                ("CRC Errors", sb.crc_errors, sa.crc_errors, r.snapshot.smart_delta.crc_errors if r.snapshot.smart_delta else None),
-                            ]:
-                                d = "unchanged"
-                                if delta_val is not None:
-                                    if delta_val > 0: d = f"+{delta_val}"
-                                    elif delta_val < 0: d = f"{delta_val}"
-                                yield Static(f"  {label:22s}  Before: {before:<6d}  After: {after:<6d}  Delta: {d}")
-                            temp_str = f"  {'Temperature':22s}  Before: {sb.temperature or 'N/A':<6}  After: {sa.temperature or 'N/A':<6}"
-                            if r.snapshot.smart_delta and r.snapshot.smart_delta.temperature is not None:
-                                t = r.snapshot.smart_delta.temperature
-                                temp_str += f"  Delta: {'+' if t >= 0 else ''}{t}\u00b0C"
-                            yield Static(temp_str)
-                            yield Static(f"  {'Power-On Hours':22s}  Before: {sb.power_on_hours or 'N/A':<6}  After: {sa.power_on_hours or 'N/A':<6}")
-                        elif sb:
-                            yield Static(f"  Health: {sb.overall_health}")
-                        else:
-                            yield Static("  SMART data not available")
-                    with Container(classes="panel"):
-                        for reason in r.classification.reasons:
-                            yield Static(f"  - {reason}")
-                    if any(s.status in (StepStatus.FAILED, StepStatus.SKIPPED) and s.error for s in r.steps):
-                        with Container(classes="panel"):
-                            for s in r.steps:
-                                if s.status in (StepStatus.FAILED, StepStatus.SKIPPED) and s.error:
-                                    yield Static(f"  \u2192 {s.name}: {s.error[:200]}", classes="failed")
-                    dur = r.total_duration_seconds
-                    h = int(dur // 3600)
-                    m = int((dur % 3600) // 60)
-                    s = int(dur % 60)
-                    ds = f"{h}h {m:02d}m {s:02d}s" if h else (f"{m}m {s:02d}s" if m else f"{s}s")
-                    with Container(classes="panel"):
-                        yield Static(f"  Duration: {ds}")
-                        if r.report_path:
-                            yield Static(f"  Report: {r.report_path}")
-                            self._report_exported = True
-                        else:
-                            yield Static("  No report generated.")
+                    yield from self._compose_success()
                 else:
-                    with Container(classes="panel"):
-                        yield Static("  Pipeline failed or was cancelled.", classes="failed")
+                    with Container(classes="panel-err"):
+                        yield Static("Pipeline failed or was cancelled.", classes="err")
                     if self.error:
                         with Container(classes="panel"):
-                            yield Static("  Root cause:", classes="warning")
-                            for line in self.error.strip().splitlines()[-12:]:
-                                yield Static(f"  {line}", classes="failed")
+                            yield Static("Details", classes="panel-title")
+                            for line in self.error.strip().splitlines()[-10:]:
+                                yield Static(line, classes="muted")
             yield Horizontal(
                 Button(" Export Report ", id="export-btn"),
-                Button(" Validate Another Drive ", id="another-btn"),
+                Button(" Another Drive ", id="another-btn"),
                 Button(" Quit ", id="quit-btn"),
-                classes="btn-bar",
+                classes="btn-row",
             )
-            yield Static("  Enter Another   Q Quit", id="footer")
+            yield Static("  Enter another    Q quit", id="footer")
 
-    def on_key(self, event) -> None:
-        if event.key == "enter":
-            self._go_another()
-        elif event.key == "q":
-            self.app.exit()
+    def _compose_success(self) -> ComposeResult:
+        result = self.result
+        cls = result.classification
+        css_class = {
+            "GOLD": "ok",
+            "SILVER": "accent",
+            "BRONZE": "warn",
+            "FAILED": "err",
+        }.get(cls.classification.value, "muted")
+        with Container(classes="panel"):
+            yield Static(f"{cls.classification.value}", classes=css_class)
+            yield Static(cls.recommendation, classes="muted")
+        with Container(classes="panel"):
+            yield Static(f"Drive:  {self.disk.model}", classes="panel-title")
+            yield Static(f"Serial: {self.disk.serial}   |   Capacity: {self.disk.capacity_human}", classes="muted")
+            yield Static(f"Filesystem: {self.config['filesystem'].upper()}   |   Label: {self.config.get('label') or '(none)'}", classes="muted")
+        if result.snapshot.smart_before and result.snapshot.smart_after:
+            before = result.snapshot.smart_before
+            after = result.snapshot.smart_after
+            delta = result.snapshot.smart_delta
+            with Container(classes="panel"):
+                yield Static("SMART comparison", classes="panel-title")
+                for label, b, a, d in [
+                    ("Reallocated sectors", before.reallocated_sectors, after.reallocated_sectors, delta.reallocated if delta else None),
+                    ("Pending sectors", before.pending_sectors, after.pending_sectors, delta.pending if delta else None),
+                    ("Uncorrectable", before.uncorrectable_sectors, after.uncorrectable_sectors, delta.uncorrectable if delta else None),
+                    ("CRC errors", before.crc_errors, after.crc_errors, delta.crc_errors if delta else None),
+                ]:
+                    dtext = "unchanged" if d == 0 else f"{'+' if d and d > 0 else ''}{d}"
+                    yield Static(f"  {label:<22} before {b:<6} after {a:<6} delta {dtext}", classes="muted")
+        with Container(classes="panel"):
+            yield Static("Assessment", classes="panel-title")
+            for reason in cls.reasons:
+                yield Static(f"  - {reason}", classes="muted")
+        duration = _fmt_duration(result.total_duration_seconds)
+        with Container(classes="panel"):
+            yield Static(f"Duration: {duration}", classes="muted")
+            yield Static(f"Bad blocks: {result.snapshot.badblocks_count}", classes="muted")
+            if result.report_path:
+                yield Static(f"Report: {result.report_path}", classes="ok")
+
+    def action_another(self) -> None:
+        self._go_another()
+
+    def action_quit_app(self) -> None:
+        self.app.exit()
 
     def on_button_pressed(self, event) -> None:
         if event.button.id == "export-btn":
-            self._export_report()
+            self._export()
         elif event.button.id == "another-btn":
             self._go_another()
         elif event.button.id == "quit-btn":
             self.app.exit()
 
-    def _export_report(self) -> None:
-        if self.result and self.result.report_path:
-            self._report_exported = True
-            report_dir = os.path.dirname(self.result.report_path)
-            try:
-                subprocess.Popen(["xdg-open", report_dir],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.query_one("#footer").update(f"  Opening report folder...  Q Quit")
-            except Exception:
-                try:
-                    self.query_one("#footer").update(f"  Report: {self.result.report_path}  Q Quit")
-                except Exception:
-                    pass
-        else:
-            try:
-                self.query_one("#footer").update("  No report to export.  Q Quit")
-            except Exception:
-                pass
-
     def _go_another(self) -> None:
-        while len(self.app.screen_stack) > 2:
-            try:
-                self.app.pop_screen()
-            except Exception:
-                break
+        main = self.app.screen_stack[0]
+        self.app.pop_to_root()
+        if isinstance(main, MainScreen):
+            main.refresh_drives()
 
-    def action_quit(self) -> None:
-        self.app.exit()
+    def _export(self) -> None:
+        if not self.result or not self.result.report_path:
+            return
+        report_dir = os.path.dirname(self.result.report_path)
+        try:
+            subprocess.Popen(
+                ["xdg-open", report_dir],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+        try:
+            self.query_one("#footer", Static).update("  Report folder opened.    Q quit")
+        except Exception:
+            pass

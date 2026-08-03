@@ -66,6 +66,8 @@ def _find_loader(exe_dir: Path) -> str | None:
 
 def _build_env(use_bundled_libs: bool = False) -> dict[str, str]:
     env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
     if use_bundled_libs:
         exe_dir = _tool_dir()
         if exe_dir and (exe_dir / "lib").exists():

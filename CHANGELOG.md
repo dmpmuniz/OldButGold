@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.10.0
+
+- TUI reescrita do zero: 9 telas unificadas em 5 (Main, Drive, Config, Execution, Complete) — fluxo KISS
+- Paleta cinza-azulada monocromática (#0d1117 bg, #58a6ff accent, #3fb950 ok, #d29922 warn, #f85149 err)
+- Navegação completa por teclado e mouse em todas as telas (Enter/Esc com priority, cards clicáveis)
+- MainScreen: disclaimer + lista de discos em um só fluxo
+- DriveScreen: Device/Configuration/SMART unificados + avisos de montagem/sessão + ações (Back/Unmount/Recover/Restart/Configure)
+- ConfigScreen: seleção de perfil/filesystem/label + confirmação final
+- ExecutionScreen: stages + progresso + 9 mini-cards de métricas + log; cancelamento com `c`
+- CompleteScreen: classificação, comparação SMART, assessment, export/novo teste/sair
+- Bug fix: `pop_to_root` não estoura mais a MainScreen (base da pilha)
+- Smoke test de navegação completa em PTY (entrada → cancelamento → retorno → exit limpo)
+
 ## v0.9.0
 
 - TUI redesign: all 9 screens with consistent card/metric layout, SCREEN_SIZE fixed at 120x40
