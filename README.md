@@ -2,9 +2,9 @@
 
 **OldButGold** is a Linux terminal (TUI) toolkit for reviving and certifying
 used HDDs/SSDs/NVMe drives. It runs a full hardware-validation pipeline —
-SMART health check, destructive/non-destructive surface scan (badblocks),
-GPT partitioning, filesystem formatting, and a graded classification
-(Gold / Silver / Bronze / Failed) with a generated markdown report.
+SMART health check, destructive surface scan (badblocks), GPT partitioning,
+filesystem formatting, and a graded classification (Gold / Silver / Bronze /
+Failed) with a generated markdown report.
 
 ## Quick start
 
@@ -14,19 +14,33 @@ Run the self-contained binary as root:
 pkexec ./OldButGold
 ```
 
-Or from source (requires root):
+Try the full flow without touching any real drive (uses an image file):
 
 ```bash
-sudo python -m obg --test    # non-destructive ~1% smoke test
-sudo python -m obg           # full validation
+pkexec ./OldButGold --test --mock
 ```
+
+Or from source:
+
+```bash
+pkexec python -m obg --test --mock   # safe trial on a mock image
+pkexec python -m obg                 # full validation
+```
+
+## Test mode vs mock
+
+- `--test` limits the badblocks scan to ~1% of the drive, but it is **still
+  destructive** (it writes test patterns). Use it only on drives you don't care
+  about.
+- `--mock` creates a virtual disk image file (`test_disk_1gb.img`) — the only
+  risk-free way to try the application.
 
 ## What it does
 
 1. **Drive Identification** — enumerate disks, read SMART and geometry.
 2. **Initial Health Check** — SMART short self-test + baseline capture.
-3. **Surface Validation** — badblocks surface scan (non-destructive `--test`,
-   destructive full run otherwise). Resumable if interrupted.
+3. **Surface Validation** — destructive badblocks surface scan, resumable if
+   interrupted.
 4. **Final Health Check** — re-read SMART and compute deltas.
 5. **Prepare / Partition / Format** — GPT + chosen filesystem.
 6. **Report** — graded classification with a markdown report.
@@ -34,7 +48,8 @@ sudo python -m obg           # full validation
 ## Requirements
 
 - Linux, Python 3.11+
-- `root` privileges (SMART + badblocks require raw device access)
+- `root` privileges (SMART + badblocks require raw device access, escalated
+  via `pkexec`)
 - Bundled `tools/` (smartctl, badblocks, lsblk, blockdev, sgdisk, partprobe,
   mkfs.*) and `lib/` — no host dependencies needed when run from the bundle.
 
@@ -49,11 +64,11 @@ sudo python -m obg           # full validation
 
 ## Disclaimer
 
-Esta ferramenta foi criada por **dmpmuniz para uso pessoal**. Ela é fornecida
-**sem garantia de qualquer tipo**, expressa ou implícita. O uso é por conta e
-risco do usuário: qualquer dano a discos, dados ou equipamento é de inteira
-responsabilidade de quem a utilizar. Use apenas em drives dos quais você não
-precisa dos dados — a validação é destrutiva.
+This tool was created by **dmpmuniz for personal use**. It is provided
+**without any warranty of any kind**, express or implied. Use it at your own
+risk: any damage to drives, data, or hardware is the sole responsibility of
+the user. Only run it on drives whose data you do not need — validation is
+destructive.
 
 ## License
 
