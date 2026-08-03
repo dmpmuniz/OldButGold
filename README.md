@@ -8,10 +8,11 @@ Failed) with a generated markdown report.
 
 ## Quick start
 
-Run the self-contained binary as root:
+Make the file executable and double-click it, or run it with sudo if root privileges are required:
 
 ```bash
-pkexec ./OldButGold
+chmod +x OldButGold
+sudo ./OldButGold
 ```
 
 Try the full flow without touching any real drive (uses an image file):
@@ -33,7 +34,7 @@ pkexec python -m obg                 # full validation
   destructive** (it writes test patterns). Use it only on drives you don't care
   about.
 - `--mock` creates a virtual disk image file (`test_disk_1gb.img`) — the only
-  risk-free way to try the application.
+  risk-free (maybe?) way to try the application.
 
 ## What it does
 
