@@ -20,6 +20,10 @@ from obg.core.lock import acquire_lock, release_lock
 from obg.core.session import create_session, find_session, update_checkpoint, update_stage, complete_session, save_smart_snapshot_a, load_smart_snapshot_a
 
 
+class OperationCancelled(Exception):
+    """Raised when the user cancels the operation mid-step."""
+
+
 STEPS = [
     "Drive Identification",
     "Initial SMART Self-Test",
@@ -89,7 +93,15 @@ def run_pipeline(
                 body()
                 _finish_step(sr, StepStatus.OK)
                 return True
+            except OperationCancelled:
+                _finish_step(sr, StepStatus.CANCELLED)
+                _finish_remaining(StepStatus.CANCELLED)
+                return False
             except Exception as e:
+                if is_cancelled():
+                    _finish_step(sr, StepStatus.CANCELLED)
+                    _finish_remaining(StepStatus.CANCELLED)
+                    return False
                 _finish_step(sr, StepStatus.FAILED, str(e))
                 if fatal:
                     _finish_remaining(StepStatus.SKIPPED)
@@ -165,6 +177,7 @@ def run_pipeline(
             bb_count = run_badblocks(
                 device, on_output, on_checkpoint=_on_checkpoint,
                 test_mode=test_mode, profile=profile, resume_offset=resume_offset,
+                is_cancelled=is_cancelled,
             )
         if not _run("Surface Scan (Badblocks)", _surface):
             return _build_result(False, False, step_results, start_time, report_path, disk_info, snapshot_a, snapshot_b, delta, bb_count)

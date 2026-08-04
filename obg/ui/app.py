@@ -637,7 +637,7 @@ class ExecutionScreen(Screen):
         StepStatus.OK: ("[x]", "step-ok"),
         StepStatus.FAILED: ("[!]", "step-failed"),
         StepStatus.SKIPPED: ("[-]", "step-skipped"),
-        StepStatus.CANCELLED: ("[/]", "step-skipped"),
+        StepStatus.CANCELLED: ("[#]", "step-skipped"),
     }
 
     def __init__(self, disk: DiskInfo, config: dict, resume: bool = False) -> None:

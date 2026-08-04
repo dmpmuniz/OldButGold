@@ -190,7 +190,8 @@ Rewrite all 9 TUI screens from scratch with a premium aesthetic: double-line box
 │   ║  ╚══════════════╝                                      ║   │
 │   ║                                                      ║   │
 │   ║  Optimized validation created for OldButGold.        ║   │
-│   ║  Uses two destructive validation patterns...         ║   │
+│   ║  Uses a single destructive validation pattern        ║   │
+│   ║  (write + verify)...                                 ║   │
 │   ╚══════════════════════════════════════════════════════╝   │
 │                                                            │
 │   ╔══════════════════════════════════════════════════════╗   │

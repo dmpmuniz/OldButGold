@@ -1,6 +1,6 @@
 import os
 import pytest
-from obg.utils.runner import run, RunResult
+from obg.utils.runner import run, RunResult, ProcessAborted, ProcessStalled
 
 def test_run_simple_command():
     r = run(["echo", "hello"])
@@ -32,3 +32,36 @@ def test_run_on_output_callback():
 def test_run_measures_duration():
     r = run(["sleep", "0.1"])
     assert r.duration_seconds >= 0.1
+
+
+def test_run_stop_check_aborts_streaming():
+    import time as _t
+    start = _t.monotonic()
+    with pytest.raises(ProcessAborted):
+        run(
+            ["bash", "-c", "while true; do echo tick; sleep 0.2; done"],
+            on_output=lambda _: None,
+            stop_check=lambda: _t.monotonic() - start > 1,
+            idle_timeout=60,
+        )
+
+
+def test_run_idle_timeout_aborts_streaming():
+    with pytest.raises(ProcessStalled):
+        run(
+            ["sleep", "30"],
+            on_output=lambda _: None,
+            stop_check=lambda: False,
+            idle_timeout=1,
+        )
+
+
+def test_run_on_output_still_streams_lines():
+    lines = []
+    r = run(
+        ["printf", "a\nb\nc\n"],
+        on_output=lines.append,
+        stop_check=lambda: False,
+        idle_timeout=10,
+    )
+    assert lines == ["a", "b", "c"]

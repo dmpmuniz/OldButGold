@@ -6,15 +6,17 @@ from obg.utils.runner import run
 
 
 def get_profile_command(profile: str, device: str) -> list[str]:
+    # Recommended: single pattern (0xaa) -> 1 write pass + 1 read pass (2 passes total).
     if profile == "recommended":
-        return ["badblocks", "-w", "-s", "-v", "-b", "4096", "-t", "0xaa", "-t", "0x55", device]
+        return ["badblocks", "-w", "-s", "-v", "-b", "4096", "-t", "0xaa", device]
+    # Extended: all default patterns (0xaa, 0x55, 0xff, 0x00) -> 8 passes total.
     return ["badblocks", "-w", "-s", "-v", device]
 
 
 def _get_block_count(device: str) -> int:
     if os.path.isfile(device):
         return os.path.getsize(device) // 4096
-    result = run(["blockdev", "--getsz", device])
+    result = run(["blockdev", "--getsz", device], timeout=15)
     if result.returncode != 0:
         raise RuntimeError(f"blockdev --getsz failed: {result.stderr}")
     total_512 = int(result.stdout.strip())
@@ -28,6 +30,8 @@ def run_badblocks(
     test_mode: bool = False,
     profile: str = "recommended",
     resume_offset: float = 0,
+    is_cancelled: Callable[[], bool] | None = None,
+    idle_timeout: float | None = 600,
 ) -> int:
     if resume_offset > 0:
         MARGIN_PCT = 10
@@ -67,7 +71,7 @@ def run_badblocks(
                         pass
         return handler
 
-    result = run(command, on_output=_line_handler())
+    result = run(command, on_output=_line_handler(), stop_check=is_cancelled, idle_timeout=idle_timeout)
     output = result.stdout + result.stderr
     bad_count = 0
     for line in output.splitlines():

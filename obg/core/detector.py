@@ -53,7 +53,7 @@ def _detect_transport(device_name: str, tran_field: str | None) -> str:
 
 def _check_smart(device: str) -> bool:
     try:
-        result = run(["smartctl", "-i", device])
+        result = run(["smartctl", "-i", device], timeout=10)
     except Exception:
         return False
     if result.returncode != 0:
@@ -95,7 +95,7 @@ def list_disks() -> list[DiskInfo]:
         "lsblk", "-J", "-b", "-o",
         "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,REV,TRAN,ROTA,PHY-SEC,LOG-SEC,PTTYPE,WWN",
     ]
-    result = run(cmd)
+    result = run(cmd, timeout=15)
     if result.returncode != 0:
         return []
 
@@ -182,7 +182,7 @@ def list_mock_disks(image_path: str) -> list[DiskInfo]:
 
 def verify_identity(device: str, expected_model: str, expected_serial: str) -> bool:
     cmd = ["lsblk", "-o", "NAME,MODEL,SERIAL", device, "-J"]
-    result = run(cmd)
+    result = run(cmd, timeout=15)
     if result.returncode != 0:
         return False
     try:

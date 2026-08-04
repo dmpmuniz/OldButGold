@@ -1,7 +1,10 @@
 from __future__ import annotations
+import errno
 import os
 import re as _re
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -17,6 +20,14 @@ class RunResult:
     stdout: str
     stderr: str
     duration_seconds: float
+
+
+class ProcessAborted(Exception):
+    """Raised when a streaming subprocess is aborted via stop_check."""
+
+
+class ProcessStalled(Exception):
+    """Raised when a streaming subprocess produces no output for idle_timeout seconds."""
 
 
 def _tool_dir() -> Path | None:
@@ -77,11 +88,27 @@ def _build_env(use_bundled_libs: bool = False) -> dict[str, str]:
     return env
 
 
+def _terminate_process_group(proc: subprocess.Popen) -> None:
+    """Kill the whole process group (child runs with os.setsid)."""
+    try:
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            os.killpg(pgid, signal.SIGKILL)
+            proc.wait(timeout=5)
+    except (ProcessLookupError, OSError):
+        pass
+
+
 def run(
     command: list[str],
     timeout: int | None = None,
     on_output: Callable[[str], None] | None = None,
     input_data: str | None = None,
+    stop_check: Callable[[], bool] | None = None,
+    idle_timeout: float | None = None,
 ) -> RunResult:
     resolved_str = _resolve_tool(command[0])
     resolved = resolved_str.split() + command[1:]
@@ -104,10 +131,31 @@ def run(
         fd = proc.stdout.fileno()
         _last_progress = b""
         _last_bs_pct = None
+        last_output_at = time.monotonic()
         while True:
-            chunk = os.read(fd, 4096)
+            if stop_check and stop_check():
+                _terminate_process_group(proc)
+                raise ProcessAborted("Process aborted by request")
+            if idle_timeout is not None:
+                idle = time.monotonic() - last_output_at
+                if idle > idle_timeout:
+                    _terminate_process_group(proc)
+                    raise ProcessStalled(
+                        f"Process produced no output for {idle_timeout:.0f}s; "
+                        f"aborted after {idle:.0f}s of inactivity"
+                    )
+            readable, _, _ = select.select([fd], [], [], 0.5)
+            if not readable:
+                continue
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError as e:
+                if e.errno == errno.EINTR:
+                    continue
+                raise
             if not chunk:
                 break
+            last_output_at = time.monotonic()
             buf += chunk
             while b"\x08" in buf:
                 pos = buf.find(b"\x08")

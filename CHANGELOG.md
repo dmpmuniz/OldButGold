@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.10.1
+
+- Fix Recommended profile: single destructive pattern (`-t 0xaa`, 4K blocks) — 1 write pass + 1 read pass (2 passes total), instead of two test patterns (4 passes)
+- Fix app/UI appearing frozen during long scans: streaming subprocess runner now detects stalls (no output for 10 min) and aborts with a clean failure; cancel (`C`) now stops badblocks mid-scan and reports the step as cancelled
+- Fix missing timeouts on interactive commands (lsblk, smartctl) so drive refresh and SMART steps cannot hang indefinitely
+- Fix MarkupError crash rendering the cancelled-step icon (`[/]` close-tag → `[#]`)
+- MainScreen refresh (R / Refresh button) verified end-to-end; bounded by new timeouts so it cannot stall on wedged devices
+- docs: align Recommended profile description (single pattern) in TUI design spec
+
 ## v0.10.0
 
 - TUI reescrita do zero: 9 telas unificadas em 5 (Main, Drive, Config, Execution, Complete) — fluxo KISS

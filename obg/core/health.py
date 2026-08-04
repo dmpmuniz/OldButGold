@@ -143,7 +143,7 @@ def _parse_nvme(device: str, output: str) -> SmartData:
 
 
 def run_short_test(device: str, on_output: Callable[[str], None] | None = None) -> bool:
-    result = run(["smartctl", "-t", "short", device])
+    result = run(["smartctl", "-t", "short", device], timeout=30)
     if result.returncode not in (0, 2):
         return False
     return poll_smart_test(device, timeout_seconds=300, on_output=on_output)
@@ -160,7 +160,7 @@ def poll_smart_test(
     start_time = time.monotonic()
     last_pct = 0
     while time.monotonic() < deadline:
-        result = run(["smartctl", "-a", device])
+        result = run(["smartctl", "-a", device], timeout=30)
         if result.returncode not in (0, 2):
             return False
         output = result.stdout

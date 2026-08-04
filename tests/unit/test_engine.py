@@ -1,9 +1,11 @@
 import time
 from datetime import datetime
+from unittest.mock import patch
 from obg.models.disk import DiskInfo, DiskSnapshot, SmartDelta
 from obg.models.operation import StepStatus, StepResult, OperationResult
 from obg.models.classification import Classification, ClassificationResult
-from obg.core.engine import _build_result
+from obg.core.engine import _build_result, run_pipeline
+from obg.utils.runner import ProcessAborted
 from obg.models.report import ReportData
 
 
@@ -85,3 +87,39 @@ def test_build_result_skipped_step_found_as_failed():
     ]
     result = _build(False, False, steps, info)
     assert any("Step 2" in r for r in result.classification.reasons)
+
+
+def test_cancel_mid_badblocks_marks_steps_cancelled():
+    info = _make_info()
+
+    def fake_badblocks(device, on_output, **kwargs):
+        on_output(" 5.00% done, 0:00 elapsed.")
+        raise ProcessAborted("aborted")
+
+    with patch("obg.core.engine.os.geteuid", return_value=0):
+        with patch("obg.core.engine.acquire_lock", return_value=True):
+            with patch("obg.core.engine.release_lock"):
+                with patch("obg.core.engine.verify_identity", return_value=True):
+                    with patch("obg.core.engine.run_short_test", return_value=True):
+                        with patch("obg.core.engine.read_smart", return_value=None):
+                            with patch("obg.core.engine.run_badblocks", side_effect=fake_badblocks):
+                                with patch("obg.core.engine.create_gpt"):
+                                    with patch("obg.core.engine.create_partition", return_value="/dev/sdb1"):
+                                        with patch("obg.core.engine.format_filesystem"):
+                                            with patch("obg.core.engine.generate_report", return_value=None):
+                                                result = run_pipeline(
+                                                    device=info.device,
+                                                    disk_info=info,
+                                                    filesystem="ext4",
+                                                    label="",
+                                                    profile="recommended",
+                                                    on_step=lambda name, status: None,
+                                                    on_output=lambda line: None,
+                                                    is_cancelled=lambda: True,
+                                                )
+
+    by_name = {s.name: s.status for s in result.steps}
+    assert by_name["Surface Scan (Badblocks)"] == StepStatus.CANCELLED
+    assert by_name["Create GPT"] == StepStatus.CANCELLED
+    assert by_name["Format Filesystem"] == StepStatus.CANCELLED
+    assert result.success is False
