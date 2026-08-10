@@ -79,13 +79,24 @@ def _parse_capacity_human(size_bytes: int) -> str:
     return f"{size_bytes / 1_000_000:.1f} MB"
 
 
+def _is_rotational(dev: dict) -> bool:
+    # lsblk emits ROTA as JSON bool/0/1; unknown (missing) defaults to True so
+    # we err on the side of showing the drive rather than hiding it.
+    rota = dev.get("rota", True)
+    return not (rota is False or rota == "0" or rota == 0)
+
+
 def _is_unsupported(dev: dict) -> bool:
     name = dev.get("name", "")
-    # Only block these device types (not SSDs/NVMe which are valid targets)
+    # Block pseudo/special devices entirely
     if name.startswith(("loop", "zram", "ram", "dm-", "sr", "fd")):
         return True
-    # CD-ROM / read-only devices
+    # Only whole disks
     if dev.get("type") not in ("disk", "loop"):
+        return True
+    # Only mechanical HDDs (rotational media) are valid validation targets.
+    # SSDs and NVMe drives are shown in the UI but disabled (shown, not usable).
+    if not _is_rotational(dev):
         return True
     return False
 
@@ -122,6 +133,7 @@ def list_disks() -> list[DiskInfo]:
         serial = dev.get("serial") or "Unknown"
         interface = dev.get("tran") or "unknown"
         transport = _detect_transport(name, dev.get("tran"))
+        rotational = _is_rotational(dev)
 
         disk_info = DiskInfo(
             device=f"/dev/{name}",
@@ -144,6 +156,7 @@ def list_disks() -> list[DiskInfo]:
             power_on_hours=None,
             wwn=dev.get("wwn") or None,
             is_supported=not is_unsupported,
+            rotational=rotational,
         )
         disks.append(disk_info)
 

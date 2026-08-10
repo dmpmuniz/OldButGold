@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.0
+
+- HDD-only validation: only mechanical (rotational) drives are usable targets; SSDs and NVMe are detected and listed but disabled in the UI with an explicit "requires HDD" notice
+- Fix badblocks read-back pass: operation switches to "Reading <pattern>", progress/ETA/speed reset at the start of each pass, and ETA/Speed show "—" during scans before values are available
+- Harden background threads: `exit_on_error=False` on worker tasks plus guarded `call_from_thread` everywhere so a background failure can no longer crash the app or freeze the UI
+- Log instead of silently swallowing when the completion callback can't be dispatched, so ExecutionScreen can never become a silent dead-end
+- Tests: badblocks line-parsing tests now exercise the app's real regex; ETA reset/recompute tested against the real method; new ExecutionScreen smoke test for the write→read pass transition
+
 ## v0.10.1
 
 - Fix Recommended profile: single destructive pattern (`-t 0xaa`, 4K blocks) — 1 write pass + 1 read pass (2 passes total), instead of two test patterns (4 passes)

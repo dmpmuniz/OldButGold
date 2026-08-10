@@ -64,9 +64,14 @@ def test_unsupported_devices_filtered(mock_run):
         mock_open.return_value.__exit__ = MagicMock(return_value=False)
         mock_open.return_value.readlines.return_value = ["/dev/sda / ext4 defaults 0 0\n"]
         disks = list_disks()
+    # Only the HDD (sdb, rota=True) is supported for validation.
+    # SSDs and NVMe drives are shown but disabled.
     supported = [d for d in disks if d.is_supported]
-    assert len(supported) == 3
-    names = [d.device for d in supported]
+    assert len(supported) == 1
+    assert supported[0].device == "/dev/sdb"
+    non_rotational = [d for d in disks if not d.is_supported]
+    assert len(non_rotational) == 2
+    names = [d.device for d in non_rotational]
     assert any("sdc" in n for n in names)
     assert any("nvme" in n for n in names)
 

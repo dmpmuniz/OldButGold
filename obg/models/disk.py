@@ -26,6 +26,7 @@ class DiskInfo:
     wwn: str | None = None
     is_supported: bool = True
     is_mock: bool = False
+    rotational: bool = True
 
 
 @dataclass

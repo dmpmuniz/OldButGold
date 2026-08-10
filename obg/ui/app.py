@@ -22,6 +22,19 @@ from obg.core.health import read_smart
 from obg.core.session import complete_session, find_session
 from obg.models.disk import DiskInfo
 from obg.models.operation import OperationResult, StepStatus
+from obg.utils import logger
+
+# Matches badblocks progress lines for both passes, e.g.
+# "Testing with pattern 0xaa:   50.00% done, 0:05:00 elapsed. (0/0/0 errors)" (write pass)
+# "Reading and comparing:   50.00% done, 0:05:00 elapsed." (read-back pass)
+BB_LINE_RE = re.compile(
+    r"(?:Testing with pattern (\S+):\s+|Reading and comparing:\s+)?"
+    r"([\d.]+)% done,\s+([\d:]+) elapsed\.?\s*(?:\((\d+)/(\d+)/(\d+)\s*errors?\)?)?"
+)
+
+
+def _is_scan_operation(operation: str) -> bool:
+    return "Writing" in operation or "Reading" in operation or "pattern" in operation.lower()
 
 PALETTE = {
     "bg": "#0d1117",
@@ -250,7 +263,7 @@ class MainScreen(Screen):
             self._selected = idx
             self._open_selected()
 
-    @work(thread=True)
+    @work(thread=True, exit_on_error=False)
     def _refresh(self) -> None:
         try:
             disks = list_disks()
@@ -258,7 +271,10 @@ class MainScreen(Screen):
                 disks = list_mock_disks(self.app.mock_path) + disks
         except Exception:
             disks = []
-        self.app.call_from_thread(self._rebuild, disks)
+        try:
+            self.app.call_from_thread(self._rebuild, disks)
+        except Exception:
+            pass
 
     def _rebuild(self, disks: list[DiskInfo]) -> None:
         self._disks = disks
@@ -290,7 +306,12 @@ class MainScreen(Screen):
         if disk.is_mounted:
             badges.append("Mounted")
         if disk.is_supported is False:
-            badges.append("Unsupported")
+            if not disk.rotational and disk.transport == "nvme":
+                badges.append("NVMe (requires HDD)")
+            elif not disk.rotational:
+                badges.append("SSD (requires HDD)")
+            else:
+                badges.append("Unsupported")
         session = find_session(disk)
         if session:
             pct = self._session_pct(disk, session)
@@ -453,14 +474,23 @@ class DriveScreen(Screen):
         self._set_status("Interrupted session discarded.")
         self._configure()
 
-    @work(thread=True)
+    @work(thread=True, exit_on_error=False)
     def _do_unmount(self) -> None:
-        self.app.call_from_thread(self._set_status, "Unmounting partitions...")
+        try:
+            self.app.call_from_thread(self._set_status, "Unmounting partitions...")
+        except Exception:
+            pass
         errors = _unmount_partitions(self.mounts)
         if errors:
-            self.app.call_from_thread(self._set_status, "; ".join(errors), warn=True)
+            try:
+                self.app.call_from_thread(self._set_status, "; ".join(errors), warn=True)
+            except Exception:
+                pass
             return
-        self.app.call_from_thread(self._unmount_done)
+        try:
+            self.app.call_from_thread(self._unmount_done)
+        except Exception:
+            pass
 
     def _unmount_done(self) -> None:
         self._unmounted = True
@@ -472,13 +502,16 @@ class DriveScreen(Screen):
             pass
         self._set_status("Partitions unmounted.")
 
-    @work(thread=True)
+    @work(thread=True, exit_on_error=False)
     def _fetch_smart(self) -> None:
         try:
             sd = read_smart(self.disk.device)
         except Exception:
             sd = None
-        self.app.call_from_thread(self._show_smart, sd)
+        try:
+            self.app.call_from_thread(self._show_smart, sd)
+        except Exception:
+            pass
 
     def _show_smart(self, sd) -> None:
         try:
@@ -719,13 +752,16 @@ class ExecutionScreen(Screen):
         except Exception:
             pass
 
-    @work(thread=True)
+    @work(thread=True, exit_on_error=False)
     def _fetch_smart(self) -> None:
         try:
             sd = read_smart(self.disk.device)
         except Exception:
             sd = None
-        self.app.call_from_thread(self._show_smart, sd)
+        try:
+            self.app.call_from_thread(self._show_smart, sd)
+        except Exception:
+            pass
 
     def _show_smart(self, sd) -> None:
         if not sd:
@@ -737,7 +773,7 @@ class ExecutionScreen(Screen):
         except Exception:
             pass
 
-    @work(thread=True)
+    @work(thread=True, exit_on_error=False)
     def _run(self) -> None:
         try:
             result = run_pipeline(
@@ -752,18 +788,25 @@ class ExecutionScreen(Screen):
                 test_mode=self.app.test_mode,
                 resume=self.resume,
             )
-            self.app.call_from_thread(self._finish, result, None)
+            try:
+                self.app.call_from_thread(self._finish, result, None)
+            except Exception as exc:
+                logger.error("PIPELINE", f"Could not dispatch completion callback: {exc}")
         except Exception as e:
             import traceback
 
             full = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            from obg.utils import logger
-
             logger.error("PIPELINE", f"Pipeline failed:\n{full}")
-            self.app.call_from_thread(self._finish, None, full)
+            try:
+                self.app.call_from_thread(self._finish, None, full)
+            except Exception as exc:
+                logger.error("PIPELINE", f"Could not dispatch failure callback: {exc}")
 
     def _on_step(self, name: str, status: StepStatus) -> None:
-        self.app.call_from_thread(self._update_step, name, status)
+        try:
+            self.app.call_from_thread(self._update_step, name, status)
+        except Exception:
+            pass
 
     def _update_step(self, name: str, status: StepStatus) -> None:
         icon, css = self.STEP_ICONS.get(status, ("[ ]", "step-pending"))
@@ -783,6 +826,8 @@ class ExecutionScreen(Screen):
         self._eta = ""
         self._speed = 0.0
         self._errors = (0, 0, 0)
+        self._last_pct = 0.0
+        self._last_pct_time = 0.0
         try:
             for metric_id in ("m-pct", "m-eta", "m-spd", "m-pat", "m-elapsed", "m-err", "m-bad", "m-status"):
                 self.query_one(f"#{metric_id}", Static).update("—")
@@ -793,7 +838,10 @@ class ExecutionScreen(Screen):
             pass
 
     def _on_output(self, line: str) -> None:
-        self.app.call_from_thread(self._append, line)
+        try:
+            self.app.call_from_thread(self._append, line)
+        except Exception:
+            pass
 
     def _append(self, line: str) -> None:
         line = line.strip()
@@ -810,15 +858,14 @@ class ExecutionScreen(Screen):
             self._eta = f"{eta_match.group(1)}m{eta_match.group(2)}s" if eta_match else ""
             self._paint()
             return
-        bb_match = re.match(
-            r"(?:Testing with pattern (\S+):\s+)?([\d.]+)% done,\s+([\d:]+) elapsed\.?\s*(?:\((\d+)/(\d+)/(\d+)\s*errors?\))?",
-            line,
-        )
+        bb_match = BB_LINE_RE.match(line)
         if bb_match:
             pattern, pct, elapsed, r, w, c = bb_match.groups()
             if pattern:
                 self._pattern = pattern
                 self._operation = f"Writing {pattern}"
+            elif "Reading and comparing" in line:
+                self._operation = f"Reading {self._pattern}" if self._pattern else "Reading"
             elif not self._operation or "SMART" in self._operation:
                 self._operation = "Writing"
             self._progress = float(pct)
@@ -841,6 +888,14 @@ class ExecutionScreen(Screen):
 
     def _estimate_eta(self) -> None:
         now = time.monotonic()
+        if self._progress < self._last_pct:
+            # Progress went backwards — a new pass (e.g. read-back) has started.
+            # Reset tracking so the ETA is recalculated from the current pass.
+            self._last_pct = self._progress
+            self._last_pct_time = now
+            self._eta = ""
+            self._speed = 0.0
+            return
         if self._progress > self._last_pct and now - self._last_pct_time > 0.5:
             pct_delta = self._progress - self._last_pct
             dt = now - self._last_pct_time
@@ -864,15 +919,19 @@ class ExecutionScreen(Screen):
 
     def _paint(self) -> None:
         mode_tag = " [TEST MODE]" if self._test_mode else ""
-        is_scan = "Writing" in self._operation or "pattern" in self._operation.lower()
+        is_scan = _is_scan_operation(self._operation)
         try:
             self.query_one("#m-op", Static).update(f"Operation\n{self._operation}{mode_tag}")
             if is_scan or self._progress > 0:
                 self.query_one("#m-pct", Static).update(f"Progress\n{self._progress:.1f}%")
             if self._eta:
                 self.query_one("#m-eta", Static).update(f"ETA\n{self._eta}")
+            elif is_scan:
+                self.query_one("#m-eta", Static).update("ETA\n—")
             if self._speed > 0:
                 self.query_one("#m-spd", Static).update(f"Speed\n{self._speed:.1f} MB/s")
+            elif is_scan:
+                self.query_one("#m-spd", Static).update("Speed\n—")
             if self._pattern and is_scan:
                 self.query_one("#m-pat", Static).update(f"Pattern\n{self._pattern}")
             if self._elapsed and is_scan:
