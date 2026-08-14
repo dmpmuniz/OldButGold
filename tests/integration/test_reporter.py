@@ -59,17 +59,17 @@ def test_classify_bronze():
     assert result.classification == Classification.BRONZE
 
 
-def test_classify_bronze_badblocks():
+def test_classify_bad_badblocks():
     snap = _make_snapshot(_make_smart(), _make_smart(), bb=5)
     result = classify(snap)
-    assert result.classification == Classification.BRONZE
+    assert result.classification == Classification.BAD
     assert any("Bad blocks found: 5" in r for r in result.reasons)
 
 
-def test_classify_failed_smart_fail():
+def test_classify_bad_smart_fail():
     snap = _make_snapshot(_make_smart(), _make_smart(health="FAILED"))
     result = classify(snap)
-    assert result.classification == Classification.FAILED
+    assert result.classification == Classification.BAD
 
 
 def test_classify_bronze_pending():

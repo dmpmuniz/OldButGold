@@ -108,3 +108,45 @@ def test_verify_identity_mismatch(mock_run):
     mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(mismatch_data), stderr="", duration_seconds=0.1)
     result = verify_identity("/dev/sdb", "WD Elements 25A3", "WX41A19XXXXX")
     assert result == False
+
+
+@patch("obg.core.detector.run")
+def test_verify_identity_serial_unavailable_passes(mock_run):
+    # USB bridge without exposed serial: listing stored "Unknown", the second
+    # lsblk call returns an empty serial. Must not be treated as a mismatch.
+    data = {
+        "blockdevices": [{"name": "sda", "size": 500107862016, "type": "disk",
+                          "model": "TOSHIBA MQ01ABD050", "serial": ""}]
+    }
+    mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(data), stderr="", duration_seconds=0.1)
+    assert verify_identity("/dev/sda", "TOSHIBA MQ01ABD050", "Unknown") is True
+
+
+@patch("obg.core.detector.run")
+def test_verify_identity_serial_both_unknown_passes(mock_run):
+    data = {
+        "blockdevices": [{"name": "sda", "size": 500107862016, "type": "disk",
+                          "model": "TOSHIBA MQ01ABD050", "serial": "Unknown"}]
+    }
+    mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(data), stderr="", duration_seconds=0.1)
+    assert verify_identity("/dev/sda", "TOSHIBA MQ01ABD050", "Unknown") is True
+
+
+@patch("obg.core.detector.run")
+def test_verify_identity_serial_match_passes(mock_run):
+    data = {
+        "blockdevices": [{"name": "sdb", "size": 2000398934016, "type": "disk",
+                          "model": "WD Elements 25A3", "serial": "WX41A19XXXXX"}]
+    }
+    mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(data), stderr="", duration_seconds=0.1)
+    assert verify_identity("/dev/sdb", "WD Elements 25A3", "WX41A19XXXXX") is True
+
+
+@patch("obg.core.detector.run")
+def test_verify_identity_model_mismatch_fails(mock_run):
+    data = {
+        "blockdevices": [{"name": "sda", "size": 500107862016, "type": "disk",
+                          "model": "OTHER MODEL", "serial": ""}]
+    }
+    mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(data), stderr="", duration_seconds=0.1)
+    assert verify_identity("/dev/sda", "TOSHIBA MQ01ABD050", "Unknown") is False

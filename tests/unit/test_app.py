@@ -210,3 +210,71 @@ async def test_execution_screen_badblocks_write_then_read():
             assert "Reading" in screen._operation, f"Expected 'Reading' in operation, got: {screen._operation}"
             assert screen._pattern == "0xaa"
             assert screen._progress == 50.0
+
+
+async def test_output_log_autoscrolls_to_end():
+    """Raw output panel must keep scrolling to the bottom as lines arrive."""
+    from textual.containers import VerticalScroll
+
+    disk = DiskInfo(
+        device="/tmp/mock.img", model="Mock HDD", serial="MOCK", firmware="1.0",
+        capacity_bytes=1000000000000, capacity_human="1.0 TB",
+        interface="sata", transport="sata",
+        logical_sector=512, physical_sector=4096,
+        smart_supported=False, uas_enabled=False,
+        current_fs=None, partition_table=None,
+        is_mounted=False, is_boot_disk=False,
+        temperature=None, power_on_hours=None,
+        is_supported=True, rotational=True,
+    )
+    config = {"profile": "recommended", "filesystem": "ext4", "label": ""}
+
+    with patch("obg.ui.app.run_pipeline") as mock_pipeline:
+        mock_pipeline.return_value = None
+        app = ObgApp(test_mode=True, mock_path="/tmp/test_disk_large.img")
+        async with app.run_test() as pilot:
+            screen = ExecutionScreen(disk, config)
+            app.push_screen(screen)
+            await pilot.pause()
+            await pilot.pause()
+
+            log = screen.query_one("#output-log", VerticalScroll)
+            for i in range(300):
+                screen._append(f"raw output line {i:03d} " + "x" * 60)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            assert log.max_scroll_y > 0, "log content should overflow the panel"
+            assert log.scroll_offset.y >= log.max_scroll_y, (
+                f"autoscroll stuck: offset={log.scroll_offset.y}, max={log.max_scroll_y}"
+            )
+
+
+async def test_config_screen_prefills_label_from_disk_model():
+    """Label input must suggest the CURRENT disk's brand, never a stale saved label."""
+    from textual.widgets import Input
+
+    disk = DiskInfo(
+        device="/dev/sda", model="TOSHIBA MQ01ABD050", serial="SN", firmware="FW1",
+        capacity_bytes=1000000000000, capacity_human="1.0 TB",
+        interface="sata", transport="sata",
+        logical_sector=512, physical_sector=4096,
+        smart_supported=True, uas_enabled=False,
+        current_fs=None, partition_table=None,
+        is_mounted=False, is_boot_disk=False,
+        temperature=None, power_on_hours=None,
+        is_supported=True, rotational=True,
+    )
+
+    app = ObgApp(test_mode=True, mock_path="/tmp/test_disk_large.img")
+    async with app.run_test() as pilot:
+        from obg.ui.app import ConfigScreen
+        from textual.widgets import Input
+
+        screen = ConfigScreen(disk)
+        app.push_screen(screen)
+        await pilot.pause()
+        await pilot.pause()
+        label_input = screen.query_one("#label-input", Input)
+        assert label_input.value == "TOSHIBA"

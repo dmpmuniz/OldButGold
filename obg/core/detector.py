@@ -208,5 +208,16 @@ def verify_identity(device: str, expected_model: str, expected_serial: str) -> b
     dev = blockdevices[0]
     model = (dev.get("model") or "").strip()
     serial = (dev.get("serial") or "").strip()
+    expected_model = expected_model.strip()
+    expected_serial = expected_serial.strip()
     # Both sides carry inconsistent whitespace from lsblk; compare normalized.
-    return model == expected_model.strip() and serial == expected_serial.strip()
+    if model != expected_model:
+        return False
+    # Serial is only comparable when both sides actually have one. USB bridges
+    # often expose no serial at all: the listing stores "Unknown" while the
+    # verification call returns an empty string — not a mismatch.
+    def _has_serial(value: str) -> bool:
+        return bool(value) and value != "Unknown"
+    if _has_serial(expected_serial) and _has_serial(serial):
+        return serial == expected_serial
+    return True

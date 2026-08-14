@@ -31,11 +31,12 @@ Every execution shall produce the same classification when identical results are
 
 # 3. Classification Levels
 
-OldButGold defines four official classifications:
+OldButGold defines five official classifications:
 
 * Gold
 * Silver
 * Bronze
+* Bad
 * Failed
 
 No additional classifications shall exist.
@@ -106,6 +107,28 @@ Examples include:
 * unrecoverable execution errors.
 
 No further interpretation shall be provided.
+
+---
+
+# 7a. Bad
+
+A disk shall receive **Bad** when validation completes but the observed condition condemns the device for reliable use.
+
+A disk is Bad when any of the following is observed after validation:
+
+* one or more bad blocks detected by badblocks;
+* SMART attribute 5 (Reallocated Sector Count), 197 (Current Pending Sector) or 198 (Offline Uncorrectable) is `FAILING_NOW` — the drive's own manufacturer threshold has been exceeded;
+* SMART overall-health self-assessment result is `FAILED`.
+
+Bad indicates the disk should not be trusted with data, even for archival use.
+
+---
+
+# 7b. Near-Threshold and Interface Warnings
+
+When a monitored attribute has wear (raw value > 0) and its normalized value is within 10 points of the manufacturer threshold, the disk receives Bronze with a warning that the drive is approaching its manufacturer limit.
+
+When UDMA CRC interface errors (attributes 187/199) are present, an informative cable warning is added to the reasons of any classification. It never changes the classification by itself.
 
 ---
 

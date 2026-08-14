@@ -36,6 +36,18 @@ BB_LINE_RE = re.compile(
 def _is_scan_operation(operation: str) -> bool:
     return "Writing" in operation or "Reading" in operation or "pattern" in operation.lower()
 
+
+LABEL_MAX_LENGTH = 16
+
+
+def _suggest_label(model: str) -> str:
+    """Suggest a filesystem label from the drive brand (first word of the model)."""
+    if not model or not model.strip():
+        return ""
+    brand = model.strip().split()[0].upper()
+    brand = re.sub(r"[^A-Z0-9_-]", "", brand)
+    return brand[:LABEL_MAX_LENGTH]
+
 PALETTE = {
     "bg": "#0d1117",
     "panel": "#161b22",
@@ -579,7 +591,7 @@ class ConfigScreen(Screen):
                     widget.idx = VALID_FILESYSTEMS.index(fs)
                     yield widget
                 yield Static("Volume Label (optional)", classes="panel-title")
-                yield Input(value=self.config.get("label", ""), id="label-input")
+                yield Input(value=_suggest_label(self.disk.model), id="label-input")
                 yield Static(
                     "All existing data on this drive will be permanently destroyed.",
                     id="warning-box",
@@ -913,7 +925,10 @@ class ExecutionScreen(Screen):
         try:
             log = self.query_one("#output-log", VerticalScroll)
             self.query_one("#output-log-text", Static).update("\n".join(self._log_lines[-20:]))
-            log.scroll_end(animate=False)
+            # scroll_end must run AFTER the layout refresh: the Static's height
+            # only updates on the next frame, so scrolling immediately would
+            # scroll against the old (1-line) content and stay on top.
+            self.call_after_refresh(log.scroll_end, animate=False)
         except Exception:
             pass
 
@@ -996,6 +1011,7 @@ class CompleteScreen(Screen):
             "GOLD": "ok",
             "SILVER": "accent",
             "BRONZE": "warn",
+            "BAD": "err",
             "FAILED": "err",
         }.get(cls.classification.value, "muted")
         with Container(classes="panel"):

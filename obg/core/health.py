@@ -3,36 +3,38 @@ import re
 import time
 from datetime import datetime
 from typing import Callable
-from obg.models.disk import SmartData
+from obg.models.disk import SmartAttribute, SmartData
 from obg.utils.runner import run
 
 
-def _extract_raw_value(line: str) -> int | None:
-    parts = line.split()
-    if not parts:
-        return None
-    try:
-        return int(parts[-1])
-    except (ValueError, IndexError):
-        return None
-
-
-def _parse_attribute_table(output: str) -> dict[int, int]:
-    attrs: dict[int, int] = {}
+def _parse_attribute_table(output: str) -> dict[int, SmartAttribute]:
+    attrs: dict[int, SmartAttribute] = {}
     for line in output.splitlines():
         line = line.strip()
         if not line or line.startswith("ID#") or line.startswith("="):
             continue
         parts = line.split()
+        # ID NAME FLAG VALUE WORST THRESH TYPE UPDATED WHEN_FAILED RAW_VALUE
         if len(parts) < 10:
             continue
         try:
             attr_id = int(parts[0])
+            value = int(parts[3])
+            worst = int(parts[4])
+            thresh = int(parts[5])
+            when_failed = parts[8]
+            # RAW_VALUE can span multiple tokens on some drives (e.g. "140 0 0 0");
+            # last token preserves the old single-number behavior.
+            raw = int(parts[-1])
         except ValueError:
             continue
-        raw_val = _extract_raw_value(line)
-        if raw_val is not None:
-            attrs[attr_id] = raw_val
+        attrs[attr_id] = SmartAttribute(
+            value=value,
+            worst=worst,
+            thresh=thresh,
+            when_failed=when_failed,
+            raw=raw,
+        )
     return attrs
 
 
@@ -68,18 +70,23 @@ def read_smart(device: str, timeout: int | None = 30) -> SmartData | None:
 
     attrs = _parse_attribute_table(output)
 
-    temperature = attrs.get(194)
-    power_on_hours = attrs.get(9)
+    temperature = attrs[194].raw if 194 in attrs else None
+    power_on_hours = attrs[9].raw if 9 in attrs else None
+
+    def attr_raw(attr_id: int) -> int:
+        a = attrs.get(attr_id)
+        return a.raw if a else 0
 
     return SmartData(
         overall_health=overall_health,
-        reallocated_sectors=attrs.get(5, 0),
-        pending_sectors=attrs.get(197, 0),
-        uncorrectable_sectors=attrs.get(198, 0),
-        crc_errors=attrs.get(199, 0),
+        reallocated_sectors=attr_raw(5),
+        pending_sectors=attr_raw(197),
+        uncorrectable_sectors=attr_raw(198),
+        crc_errors=max(attr_raw(187), attr_raw(199)),
         temperature=temperature,
         power_on_hours=power_on_hours,
-        power_cycle_count=attrs.get(12),
+        power_cycle_count=attrs[12].raw if 12 in attrs else None,
+        attributes=attrs,
         raw_output=output,
         collected_at=datetime.now(),
     )

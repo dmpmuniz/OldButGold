@@ -6,6 +6,7 @@ class Classification(Enum):
     GOLD   = "GOLD"
     SILVER = "SILVER"
     BRONZE = "BRONZE"
+    BAD    = "BAD"
     FAILED = "FAILED"
 
 @dataclass

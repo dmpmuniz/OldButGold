@@ -212,6 +212,7 @@ Example classifications include:
 * Gold
 * Silver
 * Bronze
+* Bad
 * Failed
 
 The assigned classification shall follow the rules defined by the project specifications.

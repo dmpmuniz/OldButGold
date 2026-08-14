@@ -1,6 +1,15 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+
+
+@dataclass
+class SmartAttribute:
+    value: int
+    worst: int
+    thresh: int
+    when_failed: str
+    raw: int
 
 
 @dataclass
@@ -41,6 +50,7 @@ class SmartData:
     raw_output: str
     collected_at: datetime
     power_cycle_count: int | None = None
+    attributes: dict[int, SmartAttribute] = field(default_factory=dict)
 
 
 @dataclass

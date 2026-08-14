@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.0.0
+
+- New classification level **BAD**: a disk that completes validation but is condemned — any bad block (> 0), SMART attribute 5/197/198 at the manufacturer threshold (FAILING_NOW), or SMART overall FAILED after validation
+- Manufacturer thresholds: parser now reads VALUE/WORST/THRESH/WHEN_FAILED from smartctl, so "how many reallocated sectors is too many" is answered by the drive's own firmware instead of a hardcoded number
+- Near-threshold warning: an attribute with wear whose normalized value is within 10 points of the manufacturer threshold gets a Bronze warning instead of passing unnoticed
+- Cable warning: UDMA CRC errors (max of attributes 187/199) add an informative "reconnect or replace the cable and revalidate" reason to any classification
+- Fix: Silver no longer ignores `uncorrectable_sectors` — a disk with uncorrectable sectors is now Bronze (or Bad if FAILING_NOW)
+- SMART overall FAILED after validation moved from Failed to Bad (validation completed; verdict is condemned, not interrupted); Failed now means execution failure only
+- ConfigScreen prefills the volume label from the disk brand (first word of the model) instead of a stale saved label
+- Fix: `verify_identity` treats "Unknown"/missing serials (USB bridges) as equivalent instead of a mismatch — model check remains mandatory
+- Fix: raw-output log autoscrolls when lines arrive (call after refresh so the scroll runs against the updated content height)
+
 ## v0.11.0
 
 - HDD-only validation: only mechanical (rotational) drives are usable targets; SSDs and NVMe are detected and listed but disabled in the UI with an explicit "requires HDD" notice

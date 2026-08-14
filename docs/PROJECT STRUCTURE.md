@@ -124,7 +124,7 @@ obg/
 │   ├── engine.py      # Pipeline orchestration (state machine)
 │   ├── session.py     # Session create/load/save/delete
 │   ├── lock.py        # Device locking (fcntl)
-│   ├── classifier.py  # Gold/Silver/Bronze/Failed
+│   ├── classifier.py  # Gold/Silver/Bronze/Bad/Failed
 │   ├── reporter.py    # Markdown report generator
 │   └── __init__.py
 ├── models/            # Type definitions
