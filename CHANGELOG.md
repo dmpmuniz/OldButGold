@@ -1,0 +1,121 @@
+# Changelog
+
+## v1.0.0
+
+- New classification level **BAD**: a disk that completes validation but is condemned — any bad block (> 0), SMART attribute 5/197/198 at the manufacturer threshold (FAILING_NOW), or SMART overall FAILED after validation
+- Manufacturer thresholds: parser now reads VALUE/WORST/THRESH/WHEN_FAILED from smartctl, so "how many reallocated sectors is too many" is answered by the drive's own firmware instead of a hardcoded number
+- Near-threshold warning: an attribute with wear whose normalized value is within 10 points of the manufacturer threshold gets a Bronze warning instead of passing unnoticed
+- Cable warning: UDMA CRC errors (max of attributes 187/199) add an informative "reconnect or replace the cable and revalidate" reason to any classification
+- Fix: Silver no longer ignores `uncorrectable_sectors` — a disk with uncorrectable sectors is now Bronze (or Bad if FAILING_NOW)
+- SMART overall FAILED after validation moved from Failed to Bad (validation completed; verdict is condemned, not interrupted); Failed now means execution failure only
+- ConfigScreen prefills the volume label from the disk brand (first word of the model) instead of a stale saved label
+- Fix: `verify_identity` treats "Unknown"/missing serials (USB bridges) as equivalent instead of a mismatch — model check remains mandatory
+- Fix: raw-output log autoscrolls when lines arrive (call after refresh so the scroll runs against the updated content height)
+
+## v0.11.0
+
+- HDD-only validation: only mechanical (rotational) drives are usable targets; SSDs and NVMe are detected and listed but disabled in the UI with an explicit "requires HDD" notice
+- Fix badblocks read-back pass: operation switches to "Reading <pattern>", progress/ETA/speed reset at the start of each pass, and ETA/Speed show "—" during scans before values are available
+- Harden background threads: `exit_on_error=False` on worker tasks plus guarded `call_from_thread` everywhere so a background failure can no longer crash the app or freeze the UI
+- Log instead of silently swallowing when the completion callback can't be dispatched, so ExecutionScreen can never become a silent dead-end
+- Tests: badblocks line-parsing tests now exercise the app's real regex; ETA reset/recompute tested against the real method; new ExecutionScreen smoke test for the write→read pass transition
+
+## v0.10.1
+
+- Fix Recommended profile: single destructive pattern (`-t 0xaa`, 4K blocks) — 1 write pass + 1 read pass (2 passes total), instead of two test patterns (4 passes)
+- Fix app/UI appearing frozen during long scans: streaming subprocess runner now detects stalls (no output for 10 min) and aborts with a clean failure; cancel (`C`) now stops badblocks mid-scan and reports the step as cancelled
+- Fix missing timeouts on interactive commands (lsblk, smartctl) so drive refresh and SMART steps cannot hang indefinitely
+- Fix MarkupError crash rendering the cancelled-step icon (`[/]` close-tag → `[#]`)
+- MainScreen refresh (R / Refresh button) verified end-to-end; bounded by new timeouts so it cannot stall on wedged devices
+- docs: align Recommended profile description (single pattern) in TUI design spec
+
+## v0.10.0
+
+- TUI reescrita do zero: 9 telas unificadas em 5 (Main, Drive, Config, Execution, Complete) — fluxo KISS
+- Paleta cinza-azulada monocromática (#0d1117 bg, #58a6ff accent, #3fb950 ok, #d29922 warn, #f85149 err)
+- Navegação completa por teclado e mouse em todas as telas (Enter/Esc com priority, cards clicáveis)
+- MainScreen: disclaimer + lista de discos em um só fluxo
+- DriveScreen: Device/Configuration/SMART unificados + avisos de montagem/sessão + ações (Back/Unmount/Recover/Restart/Configure)
+- ConfigScreen: seleção de perfil/filesystem/label + confirmação final
+- ExecutionScreen: stages + progresso + 9 mini-cards de métricas + log; cancelamento com `c`
+- CompleteScreen: classificação, comparação SMART, assessment, export/novo teste/sair
+- Bug fix: `pop_to_root` não estoura mais a MainScreen (base da pilha)
+- Smoke test de navegação completa em PTY (entrada → cancelamento → retorno → exit limpo)
+
+## v0.9.0
+
+- TUI redesign: all 9 screens with consistent card/metric layout, SCREEN_SIZE fixed at 120x40
+- ExecutionScreen: large ProgressBar + 3x3 metric cards + disk info panel + output log
+- MainMenuScreen: DVD-blade box-drawing title, disclaimer in card
+- CompleteScreen: card-organized sections
+- ValidationConfigScreen: card-based selection instead of text markers
+- DriveInfoScreen, SessionDecisionScreen, MountWarningScreen, FinalConfirmationScreen: card wrappers
+- Relabeled "Steps" → "Validation Stages" on execution screen
+- CSS: metric-card, startup-btn.selected, warning-box
+
+## v0.8.1
+
+- Fix badblocks validation profiles to match official documentation
+- Recommended: `badblocks -wsv -b 4096 -t 0xaa -t 0x55 <device>` (2 patterns, 4K blocks)
+- Extended: `badblocks -wsv <device>` (native 4 patterns, no -b, no -t)
+- Remove Extended read-only verification pass
+- Centralize command building in `scanner.get_profile_command()`
+- Add profile descriptions to configuration screen
+- Update test to match correct Extended profile command
+
+## v0.7.7 (unreleased)
+
+- Fix runner.py: bundled `lib/` path leaking into `LD_LIBRARY_PATH` during source-mode execution, causing system commands to fail with symbol lookup errors.
+
+## v0.7.6
+
+- Real SMART metrics on CompleteScreen
+- SMART Short Self-Test moved pre-pipeline (SmartTestScreen)
+- Fix pipeline header label
+
+## v0.7.5
+
+- Fix pipeline screen step-column header label (Pipeline -> Steps)
+
+## v0.7.4
+
+- Fix badblocks never running (verify_identity whitespace)
+- Real NVMe SMART parsing
+
+## v0.7.3
+
+- Bump version and rebuild release
+
+## v0.7.2
+
+- Fix audit findings F1-F16: surface pipeline errors, root-gated SMART, non-destructive test, bundled ld-linux, self-contained reports, classifier FS/uninterrupted
+
+## v0.7.1
+
+- MEGA AUDIT fixes: SSD/NVMe support, scrollable body, live output
+- Fix badblocks resume blocks-count, fix formatter error message
+- Fix classifier: pending sectors -> Bronze, UNKNOWN health -> Failed
+- CRITICAL fix: restore ExecutionScreen class, fix SMART flow, fix classifier
+- Fix freeze on 'Validate Another Drive'
+
+## v0.7.0
+
+- Pipeline reorganization, SMART metrics/ETA, UI descriptions, bug fixes
+- Fix SyntaxError in app.py caused PyInstaller 'invalid module'
+
+## v0.6.1
+
+- Fix badblocks/SMART runtime bugs, test mode, cleanup
+
+## v0.6.0
+
+- Over-engineering audit and corrections
+
+## v0.5.2
+
+- Critical bug fixes and improvements
+
+## v0.5.1
+
+- Fix bundle tool resolution, add bundle-tools.sh, update release
+- Bugfixes, docs alignment, full codebase audit

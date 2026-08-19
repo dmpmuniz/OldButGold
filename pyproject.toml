@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oldbutgold"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=1.0",
+    "rich>=14",
+]
+
+[project.scripts]
+obg = "obg.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["obg", "obg.*"]
+
+[tool.setuptools.package-data]
+obg = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

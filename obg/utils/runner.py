@@ -1,0 +1,232 @@
+from __future__ import annotations
+import errno
+import os
+import re as _re
+import select
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+from obg.utils import logger
+
+
+@dataclass
+class RunResult:
+    returncode: int
+    stdout: str
+    stderr: str
+    duration_seconds: float
+
+
+class ProcessAborted(Exception):
+    """Raised when a streaming subprocess is aborted via stop_check."""
+
+
+class ProcessStalled(Exception):
+    """Raised when a streaming subprocess produces no output for idle_timeout seconds."""
+
+
+def _tool_dir() -> Path | None:
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).parent
+        if (exe_dir / "tools").is_dir():
+            return exe_dir
+        if hasattr(sys, '_MEIPASS'):
+            meipass = Path(sys._MEIPASS)
+            if (meipass / "tools").is_dir():
+                return meipass
+        return exe_dir
+    pkg_dir = Path(__file__).resolve().parent.parent.parent
+    if (pkg_dir / "tools").is_dir():
+        return pkg_dir
+    return None
+
+
+def _resolve_tool(name: str) -> str:
+    exe_dir = _tool_dir()
+    if exe_dir:
+        tp = exe_dir / "tools" / name
+        if tp.exists() and os.access(tp, os.X_OK):
+            loader = _find_loader(exe_dir)
+            if loader:
+                return f"{loader} --library-path {exe_dir / 'lib'} {tp}"
+            return str(tp)
+        if getattr(sys, 'frozen', False):
+            raise FileNotFoundError(
+                f"Required tool '{name}' not found in application bundle. "
+                f"OldButGold must be executed from a complete distribution."
+            )
+    which = shutil.which(name)
+    if which:
+        return which
+    raise FileNotFoundError(f"Required tool not found: {name}")
+
+
+def _find_loader(exe_dir: Path) -> str | None:
+    import glob as _glob
+    matches = _glob.glob(str(exe_dir / "lib" / "ld-linux*.so*"))
+    for m in matches:
+        if os.path.isfile(m) and os.access(m, os.X_OK):
+            return m
+    return None
+
+
+def _build_env(use_bundled_libs: bool = False) -> dict[str, str]:
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+    if use_bundled_libs:
+        exe_dir = _tool_dir()
+        if exe_dir and (exe_dir / "lib").exists():
+            lib_path = str(exe_dir / "lib")
+            existing = env.get("LD_LIBRARY_PATH", "")
+            env["LD_LIBRARY_PATH"] = f"{lib_path}:{existing}" if existing else lib_path
+    return env
+
+
+def _terminate_process_group(proc: subprocess.Popen) -> None:
+    """Kill the whole process group (child runs with os.setsid)."""
+    try:
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            os.killpg(pgid, signal.SIGKILL)
+            proc.wait(timeout=5)
+    except (ProcessLookupError, OSError):
+        pass
+
+
+def run(
+    command: list[str],
+    timeout: int | None = None,
+    on_output: Callable[[str], None] | None = None,
+    input_data: str | None = None,
+    stop_check: Callable[[], bool] | None = None,
+    idle_timeout: float | None = None,
+) -> RunResult:
+    resolved_str = _resolve_tool(command[0])
+    resolved = resolved_str.split() + command[1:]
+    cmd_str = " ".join(resolved) if len(" ".join(resolved)) < 200 else command[0] + " " + " ".join(command[1:])
+    logger.debug("CMD", f"run: {cmd_str}")
+    env = _build_env(use_bundled_libs=getattr(sys, 'frozen', False))
+    start = time.monotonic()
+
+    if on_output:
+        proc = subprocess.Popen(
+            resolved,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE if input_data else None,
+            env=env,
+            preexec_fn=os.setsid,
+        )
+        buf = b""
+        lines = []
+        fd = proc.stdout.fileno()
+        _last_progress = b""
+        _last_bs_pct = None
+        last_output_at = time.monotonic()
+        while True:
+            if stop_check and stop_check():
+                _terminate_process_group(proc)
+                raise ProcessAborted("Process aborted by request")
+            if idle_timeout is not None:
+                idle = time.monotonic() - last_output_at
+                if idle > idle_timeout:
+                    _terminate_process_group(proc)
+                    raise ProcessStalled(
+                        f"Process produced no output for {idle_timeout:.0f}s; "
+                        f"aborted after {idle:.0f}s of inactivity"
+                    )
+            readable, _, _ = select.select([fd], [], [], 0.5)
+            if not readable:
+                continue
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError as e:
+                if e.errno == errno.EINTR:
+                    continue
+                raise
+            if not chunk:
+                break
+            last_output_at = time.monotonic()
+            buf += chunk
+            while b"\x08" in buf:
+                pos = buf.find(b"\x08")
+                if pos > 0:
+                    buf = buf[:pos - 1] + buf[pos + 1:]
+                else:
+                    buf = buf[1:]
+                if b"% done" in buf:
+                    pm = _re.search(rb'([\d.]+)% done', buf)
+                    if pm and pm.group(1) != _last_bs_pct:
+                        _last_bs_pct = pm.group(1)
+                        bs_after = buf.find(b'\x08', pm.end())
+                        segment = buf[:bs_after] if bs_after >= 0 else buf
+                        clean = segment
+                        while b"\x08" in clean:
+                            p2 = clean.find(b"\x08")
+                            if p2 > 0:
+                                clean = clean[:p2-1] + clean[p2+1:]
+                            else:
+                                clean = clean[1:]
+                        clean = clean.strip()
+                        if clean and b"% done" in clean:
+                            on_output(clean.decode("utf-8", errors="replace"))
+            while b"\n" in buf or b"\r" in buf:
+                idx = -1
+                nidx = buf.find(b"\n")
+                ridx = buf.find(b"\r")
+                if nidx >= 0 and (ridx < 0 or nidx < ridx):
+                    idx = nidx
+                elif ridx >= 0 and (nidx < 0 or ridx < nidx):
+                    idx = ridx
+                if idx < 0:
+                    break
+                part = buf[:idx].decode("utf-8", errors="replace").rstrip("\r\n")
+                if part:
+                    lines.append(part)
+                    on_output(part)
+                buf = buf[idx + 1:]
+            nxt = buf.strip()
+            if b"% done" in nxt and nxt != _last_progress:
+                _last_progress = nxt
+                on_output(nxt.decode("utf-8", errors="replace"))
+        remaining = buf.decode("utf-8", errors="replace").strip()
+        if remaining:
+            lines.append(remaining)
+            on_output(remaining)
+        proc.wait()
+        duration = time.monotonic() - start
+        logger.debug("CMD", f"  -> rc={proc.returncode} duration={duration:.1f}s")
+        return RunResult(
+            returncode=proc.returncode or 0,
+            stdout="\n".join(lines),
+            stderr="",
+            duration_seconds=duration,
+        )
+    else:
+        result = subprocess.run(
+            resolved,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            preexec_fn=os.setsid,
+            stdin=subprocess.PIPE if input_data else None,
+            input=input_data,
+        )
+        duration = time.monotonic() - start
+        logger.debug("CMD", f"  -> rc={result.returncode} duration={duration:.1f}s")
+        return RunResult(
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            duration_seconds=duration,
+        )
