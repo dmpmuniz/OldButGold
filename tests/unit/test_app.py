@@ -97,6 +97,7 @@ def test_eta_is_average_over_remaining_passes():
     screen.disk = _make_disk()
     screen._total_passes = 2
     screen._pass_number = 1
+    screen._pass_start_pct = 0.0
     screen._progress = 50.0
     screen._pass_elapsed_s = 600.0
     screen._scan_bytes = 1_000_000_000
@@ -106,8 +107,8 @@ def test_eta_is_average_over_remaining_passes():
     # 600s for 50% → 600s left on this pass; one more pass estimated at the
     # full-pass rate (1200s) → 1800s total = 30m.
     assert screen._eta == "30m 00s"
-    # Average speed over the scanned range, not the instantaneous window.
-    assert screen._speed == pytest.approx(50.0 / 600.0 * 1_000_000_000 / 1_000_000)
+    # Average speed over the scanned range: 50% of 1 GB in 600s = 0.83 MB/s.
+    assert screen._speed == pytest.approx(50.0 / 100 * 1_000_000_000 / 600 / 1_000_000)
 
 
 def test_eta_last_pass_excludes_remaining_passes():
@@ -115,6 +116,7 @@ def test_eta_last_pass_excludes_remaining_passes():
     screen.disk = _make_disk()
     screen._total_passes = 2
     screen._pass_number = 2
+    screen._pass_start_pct = 0.0
     screen._progress = 50.0
     screen._pass_elapsed_s = 600.0
     screen._scan_bytes = 1_000_000_000
@@ -124,11 +126,35 @@ def test_eta_last_pass_excludes_remaining_passes():
     assert screen._eta == "10m 00s"
 
 
+def test_eta_and_speed_on_resumed_pass_use_pass_span():
+    """On a resumed run badblocks' percent restarts at the resume point
+    (~40% of the disk), not at 0%; ETA and speed must use the span of the
+    current pass, not the raw percent."""
+    screen = ExecutionScreen.__new__(ExecutionScreen)
+    screen.disk = _make_disk()
+    screen._total_passes = 2
+    screen._pass_number = 1
+    screen._pass_start_pct = 40.0
+    screen._progress = 70.0
+    screen._pass_elapsed_s = 600.0
+    screen._scan_bytes = 600_000_000  # the resumed range: 60% of a 1 GB disk
+    screen._eta = ""
+    screen._speed = 0.0
+    screen._recompute_eta()
+    # 30 of the pass's 60 percent in 600s → 600s left this pass; one more
+    # pass at the same rate (1200s) → 1800s = 30m. Reading the raw percent
+    # as 0-based understates both this pass and the remaining ones.
+    assert screen._eta == "30m 00s"
+    # 50% of the 600 MB range in 600s → 0.5 MB/s.
+    assert screen._speed == pytest.approx(0.5)
+
+
 def test_recompute_eta_skipped_without_progress():
     screen = ExecutionScreen.__new__(ExecutionScreen)
     screen.disk = _make_disk()
     screen._total_passes = 2
     screen._pass_number = 1
+    screen._pass_start_pct = 0.0
     screen._progress = 0.0
     screen._pass_elapsed_s = 0.0
     screen._scan_bytes = 1_000_000_000
@@ -147,8 +173,9 @@ def test_start_pass_increments_counter_and_resets_per_pass_metrics():
     screen._pattern = "0xaa"
     screen._eta = "30m 00s"
     screen._speed = 100.0
-    screen._start_pass(write=False)
+    screen._start_pass(write=False, start_pct=40.0)
     assert screen._pass_number == 2
+    assert screen._pass_start_pct == 40.0
     assert screen._eta == ""
     assert screen._speed == 0.0
     assert "verifying" in screen._operation.lower()
@@ -162,7 +189,7 @@ def test_start_pass_write_labels_pattern_and_pass():
     screen._pattern = "0x55"
     screen._eta = ""
     screen._speed = 0.0
-    screen._start_pass(write=True)
+    screen._start_pass(write=True, start_pct=0.0)
     assert screen._pass_number == 1
     assert "writing 0x55" in screen._operation.lower()
     assert "1/8" in screen._operation
@@ -331,18 +358,32 @@ async def test_execution_screen_tracks_scan_range_and_passes():
             screen._append("TEST MODE: destructive test of 1000 of 100000 blocks (~1%)")
             await pilot.pause()
             assert screen._scan_bytes == 1000 * 4096
+            assert any("TEST MODE" in l for l in screen._log_lines)
 
             screen._append("Testing with pattern 0xaa:   10.00% done, 0:00:10 elapsed. (0/0/0 errors)")
             await pilot.pause()
             assert screen._pass_number == 1
             assert "writing" in screen._operation.lower()
 
-            screen._append("Reading and comparing:   50.00% done, 0:00:40 elapsed. (0/0/0 errors)")
+            # The read pass restarts at 0% — new pass, per-pass metrics restart.
+            screen._append("Reading and comparing:   0.00% done, 0:00:20 elapsed. (0/0/0 errors)")
             await pilot.pause()
             assert screen._pass_number == 2
             assert "verifying" in screen._operation.lower()
-            # Speed over the scanned window: 50%/40s * 4096000 bytes ≈ 5.12 MB/s
-            assert screen._speed == pytest.approx(50.0 / 40.0 * 1000 * 4096 / 1_000_000)
+            assert screen._speed == 0.0
+
+            screen._append("Reading and comparing:   50.00% done, 0:00:40 elapsed. (0/0/0 errors)")
+            await pilot.pause()
+            # Speed over the scanned window: 50% of 1000*4096 bytes in 40 s
+            # ≈ 0.051 MB/s (the old formula dropped the /100 and showed 5.12).
+            assert screen._speed == pytest.approx(50.0 / 100 * 1000 * 4096 / 40 / 1_000_000)
+
+            # A resumed scan announces its range too; the line stays visible
+            # in the log and the speed denominator follows the range.
+            screen._append("RESUME: resuming from 50% (block 500, checking 50000 blocks)")
+            await pilot.pause()
+            assert screen._scan_bytes == 50000 * 4096
+            assert any("RESUME" in l for l in screen._log_lines)
 
 
 async def test_output_log_autoscrolls_to_end():

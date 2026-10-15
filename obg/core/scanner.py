@@ -64,17 +64,12 @@ def run_badblocks(
     if last_block is not None:
         command += [str(last_block), str(start_block)]
 
-    # Checkpoints are stored as percent-of-DISK. badblocks reports percent
-    # of the scanned range, which is not the disk position on resumed or
-    # test-mode runs.
-    if total_blocks and last_block is not None:
-        start_pct = start_block / total_blocks * 100
-        range_pct = (last_block - start_block + 1) / total_blocks * 100
-    else:
-        start_pct, range_pct = 0.0, 100.0
-
+    # badblocks reports percent relative to the END of the scanned range
+    # (100 x current / last_block, e2fsprogs print_status), so on resumed and
+    # test-mode runs the raw value is not a disk position. Scale it to
+    # percent-of-DISK for the session checkpoints.
     last_checkpoint = [-1]
-    def _line_handler(start_pct=0.0, range_pct=100.0):
+    def _line_handler():
         def handler(line: str) -> None:
             on_output(line)
             if on_checkpoint and "%" in line:
@@ -82,7 +77,11 @@ def run_badblocks(
                 if m:
                     try:
                         pct = float(m.group(1))
-                        absolute_pct = start_pct + pct * range_pct / 100
+                        absolute_pct = (
+                            pct * last_block / total_blocks
+                            if total_blocks and last_block is not None
+                            else pct
+                        )
                         bucket = int(pct // 10) * 10
                         if bucket > last_checkpoint[0]:
                             last_checkpoint[0] = bucket
@@ -91,7 +90,7 @@ def run_badblocks(
                         pass
         return handler
 
-    result = run(command, on_output=_line_handler(start_pct, range_pct), stop_check=is_cancelled, idle_timeout=idle_timeout)
+    result = run(command, on_output=_line_handler(), stop_check=is_cancelled, idle_timeout=idle_timeout)
     output = result.stdout + result.stderr
     bad_count = 0
     for line in output.splitlines():

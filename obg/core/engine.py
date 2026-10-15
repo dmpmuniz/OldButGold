@@ -175,7 +175,10 @@ def run_pipeline(
                 create_session(disk_info)
             update_stage(disk_info, "Badblocks Validation")
             def _on_checkpoint(offset: float) -> None:
-                update_checkpoint(disk_info, offset)
+                # Never move the stored checkpoint backwards: a resumed run
+                # re-scans the 10% safety margin before the stored position.
+                if offset > resume_offset:
+                    update_checkpoint(disk_info, offset)
             bb_count = run_badblocks(
                 device, on_output, on_checkpoint=_on_checkpoint,
                 test_mode=test_mode, profile=profile, resume_offset=resume_offset,

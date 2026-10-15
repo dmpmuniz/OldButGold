@@ -723,6 +723,7 @@ class ExecutionScreen(Screen):
         self._pass_number = 0
         self._phase: str | None = None
         self._pass_elapsed_s = 0.0
+        self._pass_start_pct = 0.0
         # Bytes actually covered by the scan; shrinks on resume/test-mode runs.
         self._scan_bytes = disk.capacity_bytes
         self._current_step = ""
@@ -861,6 +862,7 @@ class ExecutionScreen(Screen):
         self._phase = None
         self._pass_number = 0
         self._pass_elapsed_s = 0.0
+        self._pass_start_pct = 0.0
         self._scan_bytes = self.disk.capacity_bytes
         try:
             for metric_id in ("m-pct", "m-eta", "m-spd", "m-pat", "m-elapsed", "m-err", "m-bad", "m-status"):
@@ -888,10 +890,12 @@ class ExecutionScreen(Screen):
         range_match = re.match(r"TEST MODE: destructive test of (\d+) of (\d+) blocks", line)
         if range_match:
             self._scan_bytes = int(range_match.group(1)) * 4096
+            self._log(line)
             return
         range_match = re.match(r"RESUME: resuming from \d+% \(block \d+, checking (\d+) blocks\)", line)
         if range_match:
             self._scan_bytes = int(range_match.group(1)) * 4096
+            self._log(line)
             return
         smart_match = re.match(r"SMART test:\s*(\d+)% complete", line)
         if smart_match:
@@ -904,6 +908,11 @@ class ExecutionScreen(Screen):
         bb_match = BB_LINE_RE.match(line)
         if bb_match:
             pattern, pct, elapsed, r, w, c = bb_match.groups()
+            self._progress = float(pct)
+            self._elapsed = elapsed
+            self._pass_elapsed_s = _parse_hms(elapsed)
+            if r is not None:
+                self._errors = (int(r), int(w), int(c))
             # Pass transitions are signalled by the line TYPE: write-pass
             # lines carry "Testing with pattern", read lines "Reading and
             # comparing". Every progress line repeats the type, so only a
@@ -913,12 +922,7 @@ class ExecutionScreen(Screen):
                 self._phase = phase
                 if pattern:
                     self._pattern = pattern
-                self._start_pass(write=(phase == "write"))
-            self._progress = float(pct)
-            self._elapsed = elapsed
-            self._pass_elapsed_s = _parse_hms(elapsed)
-            if r is not None:
-                self._errors = (int(r), int(w), int(c))
+                self._start_pass(write=(phase == "write"), start_pct=self._progress)
             self._recompute_eta()
             self._paint()
             return
@@ -933,10 +937,13 @@ class ExecutionScreen(Screen):
             return
         self._log(line)
 
-    def _start_pass(self, write: bool) -> None:
+    def _start_pass(self, write: bool, start_pct: float) -> None:
         self._pass_number += 1
         verb = "writing" if write else "verifying"
         self._operation = f"Pass {self._pass_number}/{self._total_passes} — {verb} {self._pattern}".strip()
+        # A resumed pass opens at the resume point (~40%), not at 0%: keep
+        # that offset so ETA and speed measure the pass's own span.
+        self._pass_start_pct = start_pct
         # New pass: per-pass ETA and speed restart from zero.
         self._eta = ""
         self._speed = 0.0
@@ -946,13 +953,16 @@ class ExecutionScreen(Screen):
         # instantaneous-rate ETA underestimated badly on zoned HDDs, where
         # the start of the disk is up to ~2x faster than the end
         # ("1h promised, 3h real"). The average converges to the truth.
-        if self._progress <= 0 or self._pass_elapsed_s <= 0:
+        span = 100.0 - self._pass_start_pct
+        done = self._progress - self._pass_start_pct
+        if done <= 0 or self._pass_elapsed_s <= 0:
             return
-        pass_remaining = self._pass_elapsed_s * (100 - self._progress) / self._progress
-        full_pass_estimate = self._pass_elapsed_s * 100 / self._progress
-        remaining_passes = max(0, self._total_passes - self._pass_number)
-        self._eta = _fmt_duration(pass_remaining + remaining_passes * full_pass_estimate)
-        self._speed = self._progress / self._pass_elapsed_s * self._scan_bytes / 1_000_000
+        frac_of_pass = done / span
+        self._eta = _fmt_duration(
+            self._pass_elapsed_s * (1 - frac_of_pass) / frac_of_pass
+            + max(0, self._total_passes - self._pass_number) * self._pass_elapsed_s / frac_of_pass
+        )
+        self._speed = frac_of_pass * self._scan_bytes / self._pass_elapsed_s / 1_000_000
 
     def _log(self, line: str) -> None:
         self._log_lines.append(line)

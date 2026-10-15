@@ -92,15 +92,21 @@ def test_resume_checkpoint_is_absolute_disk_position(mock_run, mock_count):
 
     def fake_run(cmd, on_output=None, **kwargs):
         if on_output:
-            on_output("Reading and comparing:  50.00% done, 0:05:00 elapsed.")
+            on_output("Testing with pattern 0xaa:  40.00% done, 0:00:10 elapsed.")
+            on_output("Testing with pattern 0xaa:  83.30% done, 0:05:00 elapsed.")
         return MagicMock(returncode=0, stdout="", stderr="0, 0 bad blocks found\n")
 
     mock_run.side_effect = fake_run
     run_badblocks("/dev/sdb", MagicMock(), on_checkpoint=on_checkpoint, resume_offset=50)
-    # Resumed range = blocks 400..999 = 60% of the disk. badblocks reports 50%
-    # OF THE RANGE; the checkpoint must store the absolute disk position:
-    # 40% + 50% * 60% = 70% (old bug: stored 50, corrupting saved progress).
-    assert on_checkpoint.call_args[0][0] == pytest.approx(70.0)
+    # badblocks reports percent relative to the END of the scanned range
+    # (100 x current / end_block — e2fsprogs print_status), so a resume from
+    # 50% (blocks 400..999) opens at ~40%, NOT 0%. A checkpoint is that
+    # position scaled to the whole disk: 40 x 999/1000 = 39.96,
+    # 83.3 x 999/1000 = 83.22. (The old start + pct x range/100 formula kept
+    # this same ~40->64 jump, skipping disk regions on the next resume.)
+    calls = [c[0][0] for c in on_checkpoint.call_args_list]
+    assert calls[0] == pytest.approx(40.0 * 999 / 1000)
+    assert calls[-1] == pytest.approx(83.3 * 999 / 1000)
 
 
 @patch("obg.core.scanner._get_block_count", return_value=100000)
@@ -128,6 +134,7 @@ def test_test_mode_checkpoint_is_absolute_disk_pct(mock_run, mock_count):
 
     mock_run.side_effect = fake_run
     run_badblocks("/dev/sdb", MagicMock(), on_checkpoint=on_checkpoint, test_mode=True)
-    # Fresh test-mode range = first 1000 of 100000 blocks = 1% of the disk:
-    # 50% of that range = 0.5% absolute, so sessions no longer claim ~100%.
-    assert on_checkpoint.call_args[0][0] == pytest.approx(0.5)
+    # Fresh test-mode range = blocks 0..999 of 100000. badblocks reports
+    # 100 x current / end_block, so 50% = block 499.5 = 0.4995% of the disk
+    # (the old formula stored 49.95%, claiming half the disk was validated).
+    assert on_checkpoint.call_args[0][0] == pytest.approx(50.0 * 999 / 100000)

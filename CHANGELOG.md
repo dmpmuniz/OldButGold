@@ -3,7 +3,7 @@
 ## v1.1.0
 
 - Fix critical resume bug: badblocks received a block COUNT as `last_block` (an absolute position per its man page), so a resumed scan silently skipped the tail of the disk — a partially tested drive could be classified GOLD; resumed scans now always end at the real end of the disk
-- Fix resume checkpoints: progress was saved as percent of the resumed range, not percent of the disk, corrupting saved progress when a resumed run was interrupted again; checkpoints are now absolute disk positions (test-mode sessions too)
+- Fix resume checkpoints: progress was saved as percent of the resumed range, not percent of the disk, corrupting saved progress when a resumed run was interrupted again; checkpoints are now absolute disk positions (test-mode sessions too) and never move backwards while the safety margin is re-scanned
 - Fix "Interrupted X%" badge on the drive list: it treated saved progress as a block count and always displayed 0%
 - Resuming before the first checkpoint no longer overwrites the stored session (which holds the recovered SMART Snapshot A)
 - Honest ETA: computed from badblocks' own elapsed time as an average rate over the current pass plus an estimate of the remaining passes — the old instantaneous-rate window underestimated badly on zoned HDDs (the start of a disk is up to ~2x faster than the end) and ignored passes still ahead ("1h promised, 3h real")

@@ -164,3 +164,49 @@ def test_resume_with_existing_session_does_not_recreate_it():
 
     mock_create.assert_not_called()
     assert result.success is False
+
+
+def test_resumed_run_does_not_move_checkpoint_backwards():
+    """The 10% safety margin re-scan starts before the stored checkpoint;
+    saving those lower offsets makes the badge regress on every
+    interruption. Only real progress (past the stored offset) is saved."""
+    info = _make_info()
+    cancelled = {"flag": False}
+
+    def fake_badblocks(device, on_output, **kwargs):
+        cb = kwargs["on_checkpoint"]
+        cb(45.0)  # inside the re-scanned margin, short of the stored 50%
+        cb(60.0)  # past it — real progress, must be stored
+        cancelled["flag"] = True
+        raise ProcessAborted("aborted")
+
+    with patch("obg.core.engine.os.geteuid", return_value=0):
+        with patch("obg.core.engine.acquire_lock", return_value=True):
+            with patch("obg.core.engine.release_lock"):
+                with patch("obg.core.engine.verify_identity", return_value=True):
+                    with patch("obg.core.engine.run_short_test", return_value=True):
+                        with patch("obg.core.engine.read_smart", return_value=None):
+                            with patch(
+                                "obg.core.engine.find_session",
+                                return_value={
+                                    "badblocks_offset": 50.0,
+                                    "current_stage": "Badblocks Validation",
+                                    "smart_snapshot_a": None,
+                                },
+                            ):
+                                with patch("obg.core.engine.create_session"):
+                                    with patch("obg.core.engine.update_checkpoint") as mock_cp:
+                                        with patch("obg.core.engine.run_badblocks", side_effect=fake_badblocks):
+                                            run_pipeline(
+                                                device=info.device,
+                                                disk_info=info,
+                                                filesystem="ext4",
+                                                label="",
+                                                profile="recommended",
+                                                on_step=lambda name, status: None,
+                                                on_output=lambda line: None,
+                                                is_cancelled=lambda: cancelled["flag"],
+                                                resume=True,
+                                            )
+
+    mock_cp.assert_called_once_with(info, 60.0)
