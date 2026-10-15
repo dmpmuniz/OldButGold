@@ -576,8 +576,8 @@ class ConfigScreen(Screen):
     ]
 
     PROFILE_DESCRIPTIONS = {
-        "recommended": "Two destructive patterns (0xaa / 0x55) with 4 KiB blocks. Balanced validation time.",
-        "extended": "Native badblocks defaults: all four patterns, maximum coverage, longer runtime.",
+        "recommended": "One destructive pattern (0xaa) with 4 KiB blocks — 1 write pass + 1 read pass (2 passes total). Balanced validation time.",
+        "extended": "All four native patterns (0xaa / 0x55 / 0xff / 0x00) with 4 KiB blocks — 8 passes total. Maximum coverage, longer runtime.",
     }
 
     def __init__(self, disk: DiskInfo, resume: bool = False) -> None:

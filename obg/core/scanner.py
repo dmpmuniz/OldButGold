@@ -10,7 +10,9 @@ def get_profile_command(profile: str, device: str) -> list[str]:
     if profile == "recommended":
         return ["badblocks", "-w", "-s", "-v", "-b", "4096", "-t", "0xaa", device]
     # Extended: all default patterns (0xaa, 0x55, 0xff, 0x00) -> 8 passes total.
-    return ["badblocks", "-w", "-s", "-v", device]
+    # 4 KiB blocks: the 1024-byte default is a legacy of the e2fsprogs era;
+    # modern HDDs have 4096-byte physical sectors (256 KB I/O batches).
+    return ["badblocks", "-w", "-s", "-v", "-b", "4096", device]
 
 
 def _get_block_count(device: str) -> int:

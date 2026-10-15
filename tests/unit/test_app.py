@@ -184,6 +184,19 @@ def test_session_pct_clamps_above_99():
     assert MainScreen._session_pct(disk, {"badblocks_offset": 100.0}) == 99
 
 
+def test_profile_descriptions_match_actual_profiles():
+    """The screen must describe what actually runs — the old text claimed
+    'Two destructive patterns (0xaa / 0x55)' for Recommended while the
+    scanner runs a single 0xaa pattern."""
+    from obg.ui.app import ConfigScreen
+
+    recommended = ConfigScreen.PROFILE_DESCRIPTIONS["recommended"]
+    assert "One destructive pattern" in recommended
+    assert "2 passes" in recommended
+    extended = ConfigScreen.PROFILE_DESCRIPTIONS["extended"]
+    assert "8 passes" in extended
+
+
 def test_rotational_hdd_is_supported():
     disk = DiskInfo(
         device="/dev/sdb", model="WD HDD", serial="SN1", firmware="FW1",

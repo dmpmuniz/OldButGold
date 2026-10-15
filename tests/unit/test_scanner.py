@@ -53,7 +53,9 @@ def test_extended_profile_command(mock_run):
     )
     run_badblocks("/dev/sdb", MagicMock(), profile="extended")
     cmd = mock_run.call_args[0][0]
-    assert cmd == ["badblocks", "-w", "-s", "-v", "/dev/sdb"]
+    # Native 4 patterns with modern 4 KiB blocks: 256 KB I/O batches
+    # instead of the legacy 1024-byte default (64 KB batches).
+    assert cmd == ["badblocks", "-w", "-s", "-v", "-b", "4096", "/dev/sdb"]
 
 
 @patch("obg.core.scanner.run")
