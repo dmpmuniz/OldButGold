@@ -123,3 +123,44 @@ def test_cancel_mid_badblocks_marks_steps_cancelled():
     assert by_name["Create GPT"] == StepStatus.CANCELLED
     assert by_name["Format Filesystem"] == StepStatus.CANCELLED
     assert result.success is False
+
+
+def test_resume_with_existing_session_does_not_recreate_it():
+    """Resuming before the first checkpoint must not overwrite the stored
+    session (which holds the recovered SMART Snapshot A)."""
+    info = _make_info()
+
+    # Cancel only AFTER the surface step starts, so the pipeline actually
+    # reaches create_session (an always-True lambda cancels before Step 1).
+    cancelled = {"flag": False}
+
+    def fake_badblocks(device, on_output, **kwargs):
+        cancelled["flag"] = True
+        raise ProcessAborted("aborted")
+
+    with patch("obg.core.engine.os.geteuid", return_value=0):
+        with patch("obg.core.engine.acquire_lock", return_value=True):
+            with patch("obg.core.engine.release_lock"):
+                with patch("obg.core.engine.verify_identity", return_value=True):
+                    with patch("obg.core.engine.run_short_test", return_value=True):
+                        with patch("obg.core.engine.read_smart", return_value=None):
+                            with patch(
+                                "obg.core.engine.find_session",
+                                return_value={"badblocks_offset": 0, "current_stage": "", "smart_snapshot_a": None},
+                            ):
+                                with patch("obg.core.engine.create_session") as mock_create:
+                                    with patch("obg.core.engine.run_badblocks", side_effect=fake_badblocks):
+                                        result = run_pipeline(
+                                            device=info.device,
+                                            disk_info=info,
+                                            filesystem="ext4",
+                                            label="",
+                                            profile="recommended",
+                                            on_step=lambda name, status: None,
+                                            on_output=lambda line: None,
+                                            is_cancelled=lambda: cancelled["flag"],
+                                            resume=True,
+                                        )
+
+    mock_create.assert_not_called()
+    assert result.success is False

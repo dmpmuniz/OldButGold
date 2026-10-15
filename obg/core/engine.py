@@ -169,7 +169,9 @@ def run_pipeline(
             if skip:
                 on_output("RESUME: Surface Scan already completed — skipping")
                 return
-            if resume_offset == 0:
+            # A resumed run reuses the stored session (it may hold the
+            # recovered SMART Snapshot A); only fresh runs create one.
+            if not (resume and existing_session):
                 create_session(disk_info)
             update_stage(disk_info, "Badblocks Validation")
             def _on_checkpoint(offset: float) -> None:

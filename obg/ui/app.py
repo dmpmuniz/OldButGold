@@ -340,8 +340,8 @@ class MainScreen(Screen):
 
     @staticmethod
     def _session_pct(disk: DiskInfo, session: dict) -> int:
-        total_blocks = disk.capacity_bytes // 4096 if disk.capacity_bytes else 1
-        return min(99, int(session.get("badblocks_offset", 0) / total_blocks * 100))
+        # badblocks_offset is stored as percent-of-disk (0-100), not blocks.
+        return min(99, int(session.get("badblocks_offset", 0)))
 
     def _paint_cards(self) -> None:
         drive_list = self.query_one("#drive-list", VerticalScroll)

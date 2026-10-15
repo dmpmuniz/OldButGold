@@ -78,6 +78,22 @@ def test_is_scan_operation():
     assert _is_scan_operation("") is False
 
 
+def test_session_pct_is_percent_of_disk():
+    """badblocks_offset is stored as a percent (0-100), not a block count."""
+    from obg.ui.app import MainScreen
+
+    disk = _make_disk()
+    assert MainScreen._session_pct(disk, {"badblocks_offset": 50.0}) == 50
+    assert MainScreen._session_pct(disk, {"badblocks_offset": 3.0}) == 3
+
+
+def test_session_pct_clamps_above_99():
+    from obg.ui.app import MainScreen
+
+    disk = _make_disk()
+    assert MainScreen._session_pct(disk, {"badblocks_offset": 100.0}) == 99
+
+
 def test_estimate_eta_resets_on_progress_backwards():
     screen = ExecutionScreen.__new__(ExecutionScreen)
     screen._last_pct = 95.0
