@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.0
+
+- Fix critical resume bug: badblocks received a block COUNT as `last_block` (an absolute position per its man page), so a resumed scan silently skipped the tail of the disk — a partially tested drive could be classified GOLD; resumed scans now always end at the real end of the disk
+- Fix resume checkpoints: progress was saved as percent of the resumed range, not percent of the disk, corrupting saved progress when a resumed run was interrupted again; checkpoints are now absolute disk positions (test-mode sessions too)
+- Fix "Interrupted X%" badge on the drive list: it treated saved progress as a block count and always displayed 0%
+- Resuming before the first checkpoint no longer overwrites the stored session (which holds the recovered SMART Snapshot A)
+- Honest ETA: computed from badblocks' own elapsed time as an average rate over the current pass plus an estimate of the remaining passes — the old instantaneous-rate window underestimated badly on zoned HDDs (the start of a disk is up to ~2x faster than the end) and ignored passes still ahead ("1h promised, 3h real")
+- Clear operation labels: "Pass 1/2 — writing 0xaa" / "Pass 2/2 — verifying 0xaa" — what the drive is doing and which pass is running are always visible
+- Speed metric is computed over the scanned range (resume / `--test`), not over the whole disk; the "Pass Elapsed" card distinguishes pass time from the total time in the footer
+- Extended profile now runs with 4 KiB blocks (`-b 4096`) like Recommended: the 1024-byte default is e2fsprogs-era legacy, not a recommendation — 256 KB I/O batches instead of 64 KB, and unit-consistent resume math across profiles
+- ConfigScreen profile descriptions now describe what actually runs: Recommended is one pattern (0xaa, 2 passes) — the old text claimed two patterns (0xaa / 0x55)
+
 ## v1.0.0
 
 - New classification level **BAD**: a disk that completes validation but is condemned — any bad block (> 0), SMART attribute 5/197/198 at the manufacturer threshold (FAILING_NOW), or SMART overall FAILED after validation
