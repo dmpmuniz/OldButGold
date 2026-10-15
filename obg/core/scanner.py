@@ -33,29 +33,46 @@ def run_badblocks(
     is_cancelled: Callable[[], bool] | None = None,
     idle_timeout: float | None = 600,
 ) -> int:
+    MARGIN_PCT = 10
+    total_blocks = 0
+    start_block = 0
+    last_block = None  # None = whole device (badblocks default)
     if resume_offset > 0:
-        MARGIN_PCT = 10
         total_blocks = _get_block_count(device)
-        pct_of_total = resume_offset / 100
-        start_block = max(0, int(total_blocks * pct_of_total) - int(total_blocks * MARGIN_PCT / 100))
+        start_block = max(0, int(total_blocks * resume_offset / 100) - int(total_blocks * MARGIN_PCT / 100))
+        # badblocks positional args are ABSOLUTE positions (man page:
+        # "last_block is the last block to be checked"), so a resumed scan
+        # must end at the real end of the disk — passing a block count here
+        # silently skipped the tail of the disk.
+        last_block = max(start_block, total_blocks - 1)
         if test_mode:
             limit = max(1000, int(total_blocks * 0.01))
-            blocks_count = limit
-            command = get_profile_command(profile, device) + [str(blocks_count), str(start_block)]
-        else:
-            blocks_count = total_blocks - start_block
-            command = get_profile_command(profile, device) + [str(blocks_count), str(start_block)]
-        on_output(f"RESUME: resuming from {resume_offset:.0f}% (block {start_block}, checking {blocks_count} blocks)")
+            last_block = min(last_block, start_block + limit - 1)
+        on_output(
+            f"RESUME: resuming from {resume_offset:.0f}% "
+            f"(block {start_block}, checking {last_block - start_block + 1} blocks)"
+        )
     elif test_mode:
         total_blocks = _get_block_count(device)
-        limit = max(1000, int(total_blocks * 0.01))
-        command = get_profile_command(profile, device) + [str(limit), "0"]
+        limit = min(total_blocks, max(1000, int(total_blocks * 0.01)))
+        last_block = max(0, limit - 1)
         on_output(f"TEST MODE: destructive test of {limit} of {total_blocks} blocks (~1%)")
+
+    command = get_profile_command(profile, device)
+    if last_block is not None:
+        command += [str(last_block), str(start_block)]
+
+    # Checkpoints are stored as percent-of-DISK. badblocks reports percent
+    # of the scanned range, which is not the disk position on resumed or
+    # test-mode runs.
+    if total_blocks and last_block is not None:
+        start_pct = start_block / total_blocks * 100
+        range_pct = (last_block - start_block + 1) / total_blocks * 100
     else:
-        command = get_profile_command(profile, device)
+        start_pct, range_pct = 0.0, 100.0
 
     last_checkpoint = [-1]
-    def _line_handler(offset_base=0):
+    def _line_handler(start_pct=0.0, range_pct=100.0):
         def handler(line: str) -> None:
             on_output(line)
             if on_checkpoint and "%" in line:
@@ -63,15 +80,16 @@ def run_badblocks(
                 if m:
                     try:
                         pct = float(m.group(1))
+                        absolute_pct = start_pct + pct * range_pct / 100
                         bucket = int(pct // 10) * 10
                         if bucket > last_checkpoint[0]:
                             last_checkpoint[0] = bucket
-                            on_checkpoint(offset_base + pct)
+                            on_checkpoint(absolute_pct)
                     except ValueError:
                         pass
         return handler
 
-    result = run(command, on_output=_line_handler(), stop_check=is_cancelled, idle_timeout=idle_timeout)
+    result = run(command, on_output=_line_handler(start_pct, range_pct), stop_check=is_cancelled, idle_timeout=idle_timeout)
     output = result.stdout + result.stderr
     bad_count = 0
     for line in output.splitlines():
