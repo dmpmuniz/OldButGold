@@ -452,3 +452,86 @@ async def test_config_screen_prefills_label_from_disk_model():
         await pilot.pause()
         label_input = screen.query_one("#label-input", Input)
         assert label_input.value == "TOSHIBA"
+
+
+async def test_raw_output_streams_progress_lines():
+    """The raw output panel must stream every line, progress included:
+    during a scan the badblocks progress lines are the only thing that
+    moves, and the panel looked frozen for hours when they were parsed
+    for the metric cards but never logged."""
+    disk = _make_disk()
+    config = {"profile": "recommended", "filesystem": "ext4", "label": ""}
+
+    with patch("obg.ui.app.run_pipeline") as mock_pipeline:
+        mock_pipeline.return_value = None
+        app = ObgApp(test_mode=True, mock_path="/tmp/test_disk_large.img")
+        async with app.run_test() as pilot:
+            screen = ExecutionScreen(disk, config)
+            app.push_screen(screen)
+            await pilot.pause()
+            await pilot.pause()
+
+            screen._append("Testing with pattern 0xaa:   50.00% done, 0:05:00 elapsed. (0/0/0 errors)")
+            await pilot.pause()
+            assert any("50.00% done" in l for l in screen._log_lines)
+
+            screen._append("SMART test: 10% complete (ETA 2m0s)")
+            await pilot.pause()
+            assert any("SMART test" in l for l in screen._log_lines)
+
+
+def test_main_does_not_force_terminal_size():
+    """Writing the xterm resize escape (\\x1b[8;40;100t) right before
+    startup desyncs the size Textual measures: on a maximized terminal
+    the first render is cut and only a manual resize fixes it. The app
+    must accept the terminal's real size."""
+    import obg.__main__ as main_mod
+
+    class FakeTty:
+        def __init__(self):
+            self.data = []
+
+        def write(self, s):
+            self.data.append(s)
+            return len(s)
+
+        def flush(self):
+            pass
+
+        def isatty(self):
+            return True
+
+    fake = FakeTty()
+    with patch("sys.argv", ["obg"]), patch("sys.stdout", fake), patch(
+        "obg.__main__.os.geteuid", return_value=0
+    ), patch("obg.__main__.ObgApp"):
+        main_mod.main()
+
+    assert not any("\x1b[8;" in s for s in fake.data), "app must not force the terminal size"
+
+
+async def test_cancel_button_click_cancels_run():
+    """"Cancel" in the footer is a real button — clicking it must cancel,
+    not only the C key."""
+    import threading
+
+    disk = _make_disk()
+    config = {"profile": "recommended", "filesystem": "ext4", "label": ""}
+
+    release = threading.Event()
+
+    with patch("obg.ui.app.run_pipeline") as mock_pipeline:
+        # Keep the pipeline "running" so ExecutionScreen stays on top.
+        mock_pipeline.side_effect = lambda **kwargs: release.wait(timeout=10)
+        app = ObgApp(test_mode=True, mock_path="/tmp/test_disk_large.img")
+        async with app.run_test() as pilot:
+            screen = ExecutionScreen(disk, config)
+            app.push_screen(screen)
+            await pilot.pause()
+            await pilot.pause()
+
+            assert screen._cancelled is False
+            await pilot.click("#cancel-btn")
+            await pilot.pause()
+            assert screen._cancelled is True
+            release.set()

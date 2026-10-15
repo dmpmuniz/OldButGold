@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.1
+
+- Raw Output panel streams every line again: badblocks/SMART progress lines were parsed for the metric cards but never shown, so the panel looked frozen during a scan
+- The app no longer forces the terminal window to 40x100 on startup (`\x1b[8;40;100t`): on a maximized/fullscreen terminal the first render was cut and only a manual resize fixed it
+- "Cancel" in the footer is now a real button — clicking it cancels the run (the C key still works)
+
 ## v1.1.0
 
 - Fix critical resume bug: badblocks received a block COUNT as `last_block` (an absolute position per its man page), so a resumed scan silently skipped the tail of the disk — a partially tested drive could be classified GOLD; resumed scans now always end at the real end of the disk

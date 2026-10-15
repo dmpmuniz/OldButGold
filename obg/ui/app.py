@@ -129,6 +129,13 @@ class ObgApp(App):
         background: {PALETTE['panel']}; color: {PALETTE['faint']};
         padding: 0 2;
     }}
+    #footer Button {{
+        height: 1; width: auto; border: none; padding: 0 1;
+        background: transparent; color: {PALETTE['err']};
+    }}
+    #footer Button:hover {{ background: {PALETTE['panel-soft']}; color: {PALETTE['text']}; }}
+    #footer Button:focus {{ color: {PALETTE['text']}; }}
+    #elapsed {{ width: 1fr; content-align: left middle; color: {PALETTE['faint']}; padding: 0 1; }}
 
     .panel {{ border: solid {PALETTE['border']}; background: {PALETTE['panel']}; padding: 0 1; margin: 1 0; }}
     .panel-title {{ color: {PALETTE['accent']}; text-style: bold; }}
@@ -758,7 +765,9 @@ class ExecutionScreen(Screen):
                         yield Static("", id="disk-smart")
                     with VerticalScroll(id="output-log"):
                         yield Static("", id="output-log-text")
-            yield Static("  [C] Cancel   |   Elapsed 00:00:00", id="footer")
+            with Horizontal(id="footer"):
+                yield Button(" Cancel [C] ", id="cancel-btn")
+                yield Static("  Elapsed 00:00:00", id="elapsed")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._tick)
@@ -775,12 +784,16 @@ class ExecutionScreen(Screen):
         if event.key.lower() == "c" and not self._done:
             self._cancelled = True
 
+    def on_button_pressed(self, event) -> None:
+        if event.button.id == "cancel-btn" and not self._done:
+            self._cancelled = True
+
     def _tick(self) -> None:
         if self._done:
             return
         elapsed = _fmt_duration(time.monotonic() - self._start_time)
         try:
-            self.query_one("#footer", Static).update(f"  [C] Cancel   |   Elapsed {elapsed}")
+            self.query_one("#elapsed", Static).update(f"  Elapsed {elapsed}")
         except Exception:
             pass
 
@@ -883,6 +896,10 @@ class ExecutionScreen(Screen):
         line = line.strip()
         if not line:
             return
+        # Everything streams into the raw output panel: progress lines are
+        # the only lines that move during a scan, and parsing them must not
+        # swallow them from the panel.
+        self._log(line)
         if "TEST MODE" in line:
             self._test_mode = True
         # Scanner announces the scanned range; speed is computed over it,
@@ -890,12 +907,10 @@ class ExecutionScreen(Screen):
         range_match = re.match(r"TEST MODE: destructive test of (\d+) of (\d+) blocks", line)
         if range_match:
             self._scan_bytes = int(range_match.group(1)) * 4096
-            self._log(line)
             return
         range_match = re.match(r"RESUME: resuming from \d+% \(block \d+, checking (\d+) blocks\)", line)
         if range_match:
             self._scan_bytes = int(range_match.group(1)) * 4096
-            self._log(line)
             return
         smart_match = re.match(r"SMART test:\s*(\d+)% complete", line)
         if smart_match:
