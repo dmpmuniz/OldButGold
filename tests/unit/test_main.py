@@ -42,3 +42,48 @@ def test_launch_in_terminal_reports_failure_when_all_die(tmp_path):
     which = {"ptyxis": str(dying), "gnome-terminal": str(dying)}
     with patch("obg.__main__.shutil.which", side_effect=lambda name: which.get(name)):
         assert _launch_in_terminal(["pkexec", "/x/OldButGold"]) is False
+
+
+class _FakeStdout:
+    def __init__(self, tty):
+        self._tty = tty
+
+    def isatty(self):
+        return self._tty
+
+
+def test_no_tty_handoff_uses_sudo():
+    """Double-click handoff must elevate via sudo inside the opened terminal:
+    pkexec depends on a polkit authentication agent that can be broken or
+    absent (reported on the author's KDE box); sudo prompts in the terminal
+    itself, on every desktop."""
+    import pytest
+    import obg.__main__ as main_mod
+
+    with patch("sys.argv", ["obg"]), patch("sys.stdout", _FakeStdout(False)), patch(
+        "obg.__main__.os.geteuid", return_value=1000
+    ), patch("obg.__main__._launch_in_terminal") as launch, patch(
+        "obg.__main__.logger"
+    ):
+        with pytest.raises(SystemExit):
+            main_mod.main()
+
+    assert launch.call_args[0][0][0] == "sudo"
+
+
+def test_tty_elevation_tries_sudo_before_pkexec():
+    """From a real terminal, sudo comes first (prompts right here); pkexec
+    stays as a fallback for passwordless-polkit setups."""
+    import pytest
+    import obg.__main__ as main_mod
+
+    with patch("sys.argv", ["obg"]), patch("sys.stdout", _FakeStdout(True)), patch(
+        "obg.__main__.os.geteuid", return_value=1000
+    ), patch("obg.__main__._run_elevated", return_value=0) as run, patch(
+        "obg.__main__.logger"
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main_mod.main()
+
+    assert exc.value.code == 0
+    assert run.call_args[0][0][0] == "sudo"

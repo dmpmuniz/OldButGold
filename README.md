@@ -77,7 +77,7 @@ sudo ./OldButGold        # ou: pkexec ./OldButGold
 ## Requisitos
 
 - Linux, Python 3.11+
-- `root` (SMART e badblocks precisam de acesso ao dispositivo; o app tenta `pkexec` e cai para `sudo` — o launcher `.desktop` usa `sudo` direto)
+- `root` (SMART e badblocks precisam de acesso ao dispositivo; o app tenta `sudo` — prompt no próprio terminal — e cai para `pkexec`; o launcher `.desktop` usa `sudo` direto)
 - Ferramentas de terminal inclusas em `tools/` — sem dependências de host
 
 ## Tecnologias

@@ -102,7 +102,8 @@ def main() -> None:
     if test_mode:
         logger.info("MAIN", "TEST MODE — Badblocks will scan ~1% of disk")
 
-    # Privilege escalation via pkexec
+    # Privilege elevation: sudo first (prompts in the terminal, no polkit
+    # needed); pkexec stays as a fallback for passwordless-polkit setups.
     if os.geteuid() != 0:
         is_module = sys.argv[0] in ("-m", "obg") or sys.modules["obg"].__file__.endswith("__main__.py") and "-m" in sys.argv
         if is_module:
@@ -112,17 +113,17 @@ def main() -> None:
         pkexec_cmd = ["pkexec"] + base_cmd + sys.argv[1:]
         sudo_cmd = ["sudo"] + base_cmd + sys.argv[1:]
         if not sys.stdout.isatty():
-            # Double-click from a file manager: hand off to a terminal window.
-            if not _launch_in_terminal(pkexec_cmd):
+            # Double-click from a file manager: hand off to a terminal window;
+            # sudo prompts inside the opened terminal, on any desktop.
+            if not _launch_in_terminal(sudo_cmd):
                 print("No usable terminal emulator. Run from a terminal: sudo ./OldButGold")
                 logger.error("MAIN", "No usable terminal emulator found")
                 sys.exit(1)
             logger.close()
             sys.exit(0)
-        # Real terminal: pkexec first (GUI password dialog); a failing pkexec
-        # (missing, no polkit authentication agent, denied) falls back to
-        # sudo, which prompts right here in the terminal.
-        for elevate_cmd in (pkexec_cmd, sudo_cmd):
+        # Real terminal: sudo prompts right here; pkexec fallback covers
+        # setups without sudo rights but a working polkit agent.
+        for elevate_cmd in (sudo_cmd, pkexec_cmd):
             logger.info("MAIN", f"Not root, elevating via {elevate_cmd[0]}")
             rc = _run_elevated(elevate_cmd)
             if rc == 0:

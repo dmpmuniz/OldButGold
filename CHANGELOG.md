@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.3
+
+- Elevation now goes through `sudo` first (password prompt in the terminal itself, on any desktop and display server); `pkexec` stays as a fallback for passwordless-polkit setups — pkexec depends on a polkit authentication agent that can be broken or absent (reported on a KDE box)
+- The double-click terminal handoff also uses `sudo`: the terminal the system provides (konsole, ptyxis, xfce4-terminal, …) opens with the sudo prompt inside — no polkit in the launch chain at all
+
 ## v1.1.2
 
 - New: double-clickable launcher — `OldButGold.desktop` (right-click → "Allow Launching" once) + `start.sh` ship in the zip. The desktop environment opens the terminal itself and elevation goes through `sudo`, so the launch no longer depends on pkexec/polkit
