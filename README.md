@@ -53,6 +53,18 @@ obg --mock         modo seguro num disco virtual
 obg --version      versão
 ```
 
+### Executável do release (duplo clique)
+
+1. Extraia o zip.
+2. No gerenciador de arquivos: clique-direito em `OldButGold.desktop` → **"Permitir lançamento"** (GNOME marca launchers baixados como não confiáveis — só na primeira vez).
+3. Duplo clique em `OldButGold.desktop` — abre um terminal e pede a senha do `sudo`.
+
+Ou pelo terminal, dentro da pasta extraída:
+
+```bash
+sudo ./OldButGold        # ou: pkexec ./OldButGold
+```
+
 ## O que faz
 
 1. **Identificação** — enumera discos, lê SMART e geometria.
@@ -65,7 +77,7 @@ obg --version      versão
 ## Requisitos
 
 - Linux, Python 3.11+
-- `root` (SMART e badblocks precisam de acesso ao dispositivo, escalado via `pkexec`)
+- `root` (SMART e badblocks precisam de acesso ao dispositivo; o app tenta `pkexec` e cai para `sudo` — o launcher `.desktop` usa `sudo` direto)
 - Ferramentas de terminal inclusas em `tools/` — sem dependências de host
 
 ## Tecnologias

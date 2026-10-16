@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OldButGold
+GenericName=HDD Revival Toolkit
+Comment=Destructive HDD validation (SMART + badblocks + format). Runs as root.
+# %k expands to this launcher's path in GNOME/KDE file managers (as a URI
+# or a path); start.sh resolves the binary next to it and elevates via sudo.
+Exec=sh -c "k=%k; case \"$k\" in file://*) k=${k#file://};; esac; exec sh \"$(dirname \"$k\")/start.sh\""
+Terminal=true
+Categories=System;

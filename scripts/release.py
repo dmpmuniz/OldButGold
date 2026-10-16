@@ -76,6 +76,14 @@ def assemble():
     if license_src.exists():
         shutil.copy2(license_src, dst / "LICENSE")
 
+    for launcher in ("OldButGold.desktop", "start.sh"):
+        src_launcher = REPO / launcher
+        if src_launcher.exists():
+            shutil.copy2(src_launcher, dst / launcher)
+            if launcher.endswith(".sh"):
+                os.chmod(dst / launcher, 0o755)
+            print(f"  + {launcher}")
+
     (dst / "reports" / ".gitkeep").write_text("")
     (dst / "sessions" / ".gitkeep").write_text("")
 

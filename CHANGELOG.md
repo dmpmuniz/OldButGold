@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.2
+
+- New: double-clickable launcher — `OldButGold.desktop` (right-click → "Allow Launching" once) + `start.sh` ship in the zip. The desktop environment opens the terminal itself and elevation goes through `sudo`, so the launch no longer depends on pkexec/polkit
+- Fix: launching a terminal from a double-click used `os.execvp`, which replaced the app process — when the terminal (or the elevation inside it) failed, the app died silently with no fallback and no message. Terminals are now spawned and checked: a terminal that dies moves the chain on to the next candidate, and failures are logged
+- Fix: when run from a real terminal as a non-root user, a failing `pkexec` (missing, no polkit authentication agent, or denied) now falls back to `sudo`, which prompts in the same terminal, instead of dying
+
 ## v1.1.1
 
 - Raw Output panel streams every line again: badblocks/SMART progress lines were parsed for the metric cards but never shown, so the panel looked frozen during a scan
